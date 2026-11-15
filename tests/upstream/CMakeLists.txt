@@ -180,6 +180,14 @@ target_link_libraries(altirra-display-sampling-test PRIVATE SDL3::SDL3)
 add_test(NAME upstream-display-sampling COMMAND altirra-display-sampling-test)
 set_tests_properties(upstream-display-sampling PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 60)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Driver disk caches otherwise hide first-use compilation regressions.
+    add_test(NAME upstream-display-sampling-cold
+        COMMAND altirra-display-sampling-test)
+    set_tests_properties(upstream-display-sampling-cold PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 120
+        ENVIRONMENT "MESA_SHADER_CACHE_DISABLE=true")
+endif()
 
 add_executable(altirra-ramcart-regression-test
     ramcart_regression.cpp
@@ -274,3 +282,9 @@ if(ALTIRRA_MCP)
     add_test(NAME mcp-http-transport COMMAND altirra-mcp-http-test)
     set_tests_properties(mcp-http-transport PROPERTIES TIMEOUT 30)
 endif()
+
+add_executable(altirra-display-recovery-test display_recovery.cpp)
+add_test(NAME upstream-display-recovery COMMAND altirra-display-recovery-test)
+
+add_executable(altirra-display-advisor-test display_advisor.cpp)
+add_test(NAME upstream-display-advisor COMMAND altirra-display-advisor-test)

@@ -25,6 +25,7 @@
 #include <deque>
 #include <string>
 #include <utility>
+#include <algorithm>
 #include "ui_confirm_dialog.h"
 
 namespace {
@@ -41,6 +42,8 @@ struct PendingConfirm {
 	std::string          alternateLabel;
 	ATUIConfirmCallback  onAlternate;
 	bool                 destructive = false;
+	bool                 stackedButtons = false;
+	float                buttonHeight = 0;
 	unsigned group = 0;
 	bool cancelled = false;
 	ATUIConfirmCallback  onConfirm;
@@ -64,6 +67,8 @@ void ATUIShowConfirm(ATUIConfirmOptions opts) {
 	pc.alternateLabel = opts.alternateLabel ? opts.alternateLabel : "";
 	pc.onAlternate = std::move(opts.onAlternate);
 	pc.destructive  = opts.destructive;
+	pc.stackedButtons = opts.stackedButtons;
+	pc.buttonHeight = opts.buttonHeight;
 	pc.group = opts.group;
 	pc.onConfirm    = std::move(opts.onConfirm);
 	pc.onCancel     = std::move(opts.onCancel);
@@ -117,8 +122,11 @@ void ATUIRenderConfirmDialogs() {
 	// pattern documented in CLAUDE.md.
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-	ImGui::SetNextWindowSizeConstraints(ImVec2(320, 0),
-		ImVec2(600, FLT_MAX));
+	const float maxWidth = pc.stackedButtons
+		? std::max(1.0f, std::min(600.0f, ImGui::GetMainViewport()->WorkSize.x - 16)) : 600;
+	ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(320.0f, maxWidth), 0),
+		ImVec2(maxWidth, pc.stackedButtons
+			? std::max(1.0f, ImGui::GetMainViewport()->WorkSize.y - 16) : FLT_MAX));
 
 	bool decisionConfirm = false;
 	bool decisionCancel  = pc.cancelled;
@@ -142,7 +150,8 @@ void ATUIRenderConfirmDialogs() {
 		// width depends on window width depends on wrap width).
 		// The chosen width matches the upper SizeConstraint minus
 		// approximate window padding.
-		const float kWrapX = 560.0f;
+		const float kWrapX = pc.stackedButtons
+			? std::max(1.0f, maxWidth - ImGui::GetStyle().WindowPadding.x * 2) : 560.0f;
 		ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + kWrapX);
 		ImGui::TextUnformatted(pc.message.c_str());
 		ImGui::PopTextWrapPos();
@@ -159,9 +168,15 @@ void ATUIRenderConfirmDialogs() {
 		if (!io.WantTextInput && !pc.cancelled) {
 			if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false)
 				|| ImGui::IsKeyPressed(ImGuiKey_RightArrow, false)
-				|| ImGui::IsKeyPressed(ImGuiKey_Tab, false))
+				|| ImGui::IsKeyPressed(ImGuiKey_Tab, false)
+				|| (pc.stackedButtons && (ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false)
+					|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false))))
 			{
 				const bool backwards = ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false)
+					|| (pc.stackedButtons && (ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)
+						|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false)))
 					|| (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && io.KeyShift);
 				int visual = pc.selected == 1 ? count - 1 : pc.selected == 2 ? 1 : 0;
 				visual = (visual + (backwards ? count - 1 : 1)) % count;
@@ -169,12 +184,14 @@ void ATUIRenderConfirmDialogs() {
 				pc.focusInit = false;
 			}
 
-			if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+			if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+				|| (pc.stackedButtons && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))) {
 				decisionCancel = true;
 			}
 			if (ImGui::IsKeyPressed(ImGuiKey_Enter, false)
 				|| ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)
-				|| ImGui::IsKeyPressed(ImGuiKey_Space, false))
+				|| ImGui::IsKeyPressed(ImGuiKey_Space, false)
+				|| (pc.stackedButtons && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false)))
 			{
 				if (pc.selected == 0) decisionConfirm = true;
 				else if (pc.selected == 1) decisionCancel = true;
@@ -182,12 +199,14 @@ void ATUIRenderConfirmDialogs() {
 			}
 		}
 
+		const bool scrollToSelection = pc.stackedButtons && !pc.focusInit;
 		// --- Buttons ---
-		const float buttonWidth = 120.0f;
+		const float buttonWidth = pc.stackedButtons
+			? ImGui::GetContentRegionAvail().x : 120.0f;
 		const float spacing     = ImGui::GetStyle().ItemSpacing.x;
 		const float total = buttonWidth * count + spacing * (count - 1);
 		const float avail       = ImGui::GetContentRegionAvail().x;
-		if (avail > total)
+		if (!pc.stackedButtons && avail > total)
 			ImGui::SetCursorPosX(ImGui::GetCursorPosX()
 				+ (avail - total) * 0.5f);
 
@@ -204,39 +223,48 @@ void ATUIRenderConfirmDialogs() {
 				col, 3.0f, 0, 2.0f);
 		};
 
+		// Stacked actions use the same explicit selection for keyboard and
+		// gamepad; disable independent ImGui nav activation to avoid two choices.
+		if (pc.stackedButtons) ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+
 		// Confirm button
 		if (!pc.focusInit && pc.selected == 0) {
-			ImGui::SetKeyboardFocusHere();
+			if (!pc.stackedButtons) ImGui::SetKeyboardFocusHere();
 			pc.focusInit = true;
 		}
-		if (ImGui::Button(pc.confirmLabel.c_str(), ImVec2(buttonWidth, 0)))
+		if (ImGui::Button(pc.confirmLabel.c_str(), ImVec2(buttonWidth, pc.buttonHeight)))
 			decisionConfirm = true;
 		ImVec2 confirmMin = ImGui::GetItemRectMin();
 		ImVec2 confirmMax = ImGui::GetItemRectMax();
+		if (scrollToSelection && pc.selected == 0) ImGui::SetScrollHereY(0.5f);
 
 		ImVec2 alternateMin {}, alternateMax {};
 		if (count == 3) {
-			ImGui::SameLine();
+			if (!pc.stackedButtons) ImGui::SameLine();
 			if (!pc.focusInit && pc.selected == 2) {
 				ImGui::SetKeyboardFocusHere();
 				pc.focusInit = true;
 			}
-			if (ImGui::Button(pc.alternateLabel.c_str(), ImVec2(buttonWidth, 0)))
+			if (ImGui::Button(pc.alternateLabel.c_str(), ImVec2(buttonWidth, pc.buttonHeight)))
 				decisionAlternate = true;
 			alternateMin = ImGui::GetItemRectMin();
 			alternateMax = ImGui::GetItemRectMax();
+			if (scrollToSelection && pc.selected == 2) ImGui::SetScrollHereY(0.5f);
 		}
-		ImGui::SameLine();
+		if (!pc.stackedButtons) ImGui::SameLine();
 
 		// Cancel button
 		if (!pc.focusInit && pc.selected == 1) {
-			ImGui::SetKeyboardFocusHere();
+			if (!pc.stackedButtons) ImGui::SetKeyboardFocusHere();
 			pc.focusInit = true;
 		}
-		if (ImGui::Button(pc.cancelLabel.c_str(), ImVec2(buttonWidth, 0)))
+		if (ImGui::Button(pc.cancelLabel.c_str(), ImVec2(buttonWidth, pc.buttonHeight)))
 			decisionCancel = true;
 		ImVec2 cancelMin = ImGui::GetItemRectMin();
 		ImVec2 cancelMax = ImGui::GetItemRectMax();
+		if (scrollToSelection && pc.selected == 1) ImGui::SetScrollHereY(0.5f);
+
+		if (pc.stackedButtons) ImGui::PopItemFlag();
 
 		// Draw the highlight on whichever button is currently selected.
 		if (pc.selected == 0)

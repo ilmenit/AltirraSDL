@@ -20,6 +20,7 @@
 #include <settings.h>
 
 #include "ui_main.h"
+#include "display_advisor.h"
 #include "netplay/netplay_glue.h"
 
 extern ATUIState g_uiState;
@@ -34,6 +35,7 @@ void LoadCallback(uint32 /*profileId*/, ATSettingsCategory mask, VDRegistryKey& 
 	if (!(mask & kATSettingsCategory_View))
 		return;
 
+	ATDisplayAdvisor::Cancel();
 	const bool enabled = key.getBool("View: Screen effects enabled",
 		g_uiState.screenEffectsMode != ATUIState::kSFXMode_None);
 	g_uiState.screenEffectsMode = enabled

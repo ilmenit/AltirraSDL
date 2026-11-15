@@ -3,6 +3,8 @@
 //	item registry, and command dispatcher.
 
 #include <stdafx.h>
+#include "display_recovery.h"
+#include "display_advisor.h"
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <SDL3/SDL.h>
@@ -104,6 +106,10 @@ static std::vector<std::string> g_scriptLines;
 static size_t g_scriptLineNext = 0;
 static FILE *g_scriptOutput = nullptr;
 static bool g_hasMouseOverride = false;
+static bool g_hasFocusOverride = false, g_focusOverride = false;
+bool ATTestModeWindowFocused(bool nativeFocus) {
+	return g_testModeEnabled && g_hasFocusOverride ? g_focusOverride : nativeFocus;
+}
 static ImVec2 g_mouseOverride {};
 static uint32 g_lastMessageBoxSeq = 0;
 static std::string g_lastMessageBoxKind;
@@ -213,6 +219,7 @@ static std::deque<std::string> g_syntheticTextEvents;
 
 // Reset all per-client state (called on disconnect from any path)
 static void ResetClientState() {
+	g_hasFocusOverride = false;
 	g_recvBuf.clear();
 	g_sendBuf.clear();
 	g_pendingActions.clear();
@@ -454,6 +461,31 @@ extern void ATSyncCPUHistoryState();
 static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	std::string json = "{\"ok\":true,\"state\":{";
 
+	json += "\"graphicsAdvisor\":{\"active\":";
+	json += ATDisplayAdvisor::Active() ? "true" : "false";
+	json += ",\"trial\":";
+	json += ATDisplayAdvisor::TrialActive() ? "true" : "false";
+	json += ",\"effectiveEffects\":";
+	json += ATDisplayAdvisor::EffectiveEffects(state.screenEffectsMode != ATUIState::kSFXMode_None) ? "true" : "false";
+	json += ",\"effectiveFilter\":" + std::to_string((unsigned)ATDisplayAdvisor::EffectiveFilter(ATUIGetDisplayFilterMode()));
+	json += ",\"storedFilter\":" + std::to_string((unsigned)ATUIGetDisplayFilterMode());
+	const auto advisor = ATDisplayAdvisor::GetDiagnostics();
+	json += ",\"workMs\":" + std::to_string(advisor.work);
+	json += ",\"presentMs\":" + std::to_string(advisor.present);
+	json += ",\"waitAllowanceMs\":" + std::to_string(advisor.allowance);
+	json += ",\"warmup\":" + std::to_string(advisor.warmup);
+	json += ",\"slowFrames\":" + std::to_string(advisor.slow);
+	json += ",\"eligible\":" + std::string(advisor.eligible ? "true" : "false");
+	json += ",\"keyboardCapture\":" + std::string(ImGui::GetIO().WantCaptureKeyboard ? "true" : "false");
+	json += ",\"focused\":" + std::string(g_pWindow && (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_INPUT_FOCUS) ? "true" : "false");
+	json += "},";
+	json += "\"graphicsRecovery\":{\"active\":";
+	json += ATDisplayRecovery::Active() ? "true" : "false";
+	json += ",\"preferred\":\"";
+	json += ATDisplayBackendPreferenceName(ATDisplayBackendPreferenceLoad());
+	json += "\",\"actual\":\"";
+	json += ATDisplayRecovery::ActualRenderer();
+	json += "\"},";
 	json += "\"appSuspended\":";
 	json += ATIsAppSuspendedSDL3() ? "true" : "false";
 	json += ",\"mobile\":{\"gameLoaded\":";
@@ -789,6 +821,21 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 	}
 
 	// --- State queries ---
+	if (verb == "graphics_advisor") {
+		const std::string event = NextToken(cmd);
+		if (event != "slow" && event != "vsync" && event != "cpu" && event != "paused")
+			return JsonError("usage: graphics_advisor <slow|vsync|cpu|paused>");
+		ATDisplayAdvisor::InjectTest(event.c_str());
+		return JsonOk();
+	}
+	if (verb == "graphics_recovery") {
+		const std::string event = NextToken(cmd);
+		if (event != "slow" && event != "failed")
+			return JsonError("usage: graphics_recovery <slow|failed>");
+		ATDisplayRecovery::InjectTest(event.c_str());
+		return "{\"ok\":true}";
+	}
+
 	if (verb == "query_state") {
 		return BuildStateJson(sim, state);
 	}
@@ -2334,7 +2381,20 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			return JsonError("usage: set_window_size <w> <h> (160..8192)");
 		if (!g_pWindow)
 			return JsonError("no window");
-		SDL_SetWindowSize(g_pWindow, w, h);
+		// X11 WMs may maximize an initially screen-sized window. Size
+		// requests then do nothing, and ordinary resizes are asynchronous.
+		// Keep this barrier in automation only: subsequent clicks must use
+		// the requested viewport rather than coordinates from mid-resize.
+		if (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) {
+			if (!SDL_SetWindowFullscreen(g_pWindow, false)
+				|| !SDL_SyncWindow(g_pWindow)) return JsonError(SDL_GetError());
+		}
+		if (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_MAXIMIZED) {
+			if (!SDL_RestoreWindow(g_pWindow)
+				|| !SDL_SyncWindow(g_pWindow)) return JsonError(SDL_GetError());
+		}
+		if (!SDL_SetWindowSize(g_pWindow, w, h)
+			|| !SDL_SyncWindow(g_pWindow)) return JsonError(SDL_GetError());
 		return JsonOk();
 	}
 
@@ -2482,6 +2542,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		event.type = direction == "lost"
 			? SDL_EVENT_WINDOW_FOCUS_LOST : SDL_EVENT_WINDOW_FOCUS_GAINED;
 		event.window.windowID = g_pWindow ? SDL_GetWindowID(g_pWindow) : 0;
+		g_hasFocusOverride = true; g_focusOverride = direction == "gained";
 		return SDL_PushEvent(&event) ? JsonOk() : JsonError(SDL_GetError());
 	}
 	if (verb == "physical_key") {
@@ -3524,6 +3585,8 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		return "{\"ok\":true,\"commands\":["
 			"\"ping\","
 			"\"query_state\","
+			"\"graphics_recovery <slow|failed>\","
+			"\"graphics_advisor <slow|vsync|cpu|paused>\","
 			"\"query_fonts\","
 			"\"native_search_menu\","
 			"\"native_search_activate\","

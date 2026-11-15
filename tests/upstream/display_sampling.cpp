@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
+#include <vector>
 
 #if defined(_WIN32)
 #include "generated/display_sampling_vert_dxil.h"
@@ -82,10 +84,15 @@ int main(int argc, char **argv) {
 	auto *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
 	Check(pipeline != nullptr, "Create sampling pipeline");
 
+	// Optional image dump supports differential comparison with a historical
+	// fragment: argv[1] is its binary, argv[2] receives float RGBA images.
+	FILE *dump = argc > 2 ? std::fopen(argv[2], "wb") : nullptr;
+	Check(argc <= 2 || dump, "Open comparison image dump");
+	const int targetSize = dump ? 8 : 1;
 	SDL_GPUTextureCreateInfo textureInfo {};
 	textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
 	textureInfo.format = colorDescription.format;
-	textureInfo.width = textureInfo.height = 1;
+	textureInfo.width = textureInfo.height = targetSize;
 	textureInfo.layer_count_or_depth = 1;
 	textureInfo.num_levels = 1;
 	textureInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
@@ -94,13 +101,17 @@ int main(int argc, char **argv) {
 
 	SDL_GPUTransferBufferCreateInfo transferInfo {};
 	transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-	transferInfo.size = 16;
+	transferInfo.size = targetSize * targetSize * 16;
 	auto *upload = SDL_CreateGPUTransferBuffer(device, &transferInfo);
 	transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
 	auto *download = SDL_CreateGPUTransferBuffer(device, &transferInfo);
 	Check(upload && download, "Create sampling transfer buffers");
-	const Uint32 sourcePixels[4] = {0xff000000, 0xffffffff,
+	Uint32 sourcePixels[4] = {0xff000000, 0xffffffff,
 		0xff000000, 0xffffffff};
+	if (dump) {
+		sourcePixels[0] = 0xff17396b; sourcePixels[1] = 0xffd59327;
+		sourcePixels[2] = 0xff42e9b1; sourcePixels[3] = 0xff9b215d;
+	}
 	void *mapped = SDL_MapGPUTransferBuffer(device, upload, false);
 	Check(mapped != nullptr, "Map sampling upload");
 	std::memcpy(mapped, sourcePixels, sizeof sourcePixels);
@@ -123,10 +134,24 @@ int main(int argc, char **argv) {
 		{"HDR sharp bilinear", true, true, true, 4, 0, 5, midpoint * 5},
 		{"PAL encoded intermediate", true, true, true, 1, 1, 0, 0.5f},
 		{"bicubic encoded intermediate", true, false, true, 2, 8, 0, 0.5f},
+		{"HDR bicubic output", true, false, true, 2, 0, 5, midpoint * 5},
+		{"SDR bicubic output", false, false, false, 2, 0, 0, 0.5f},
+		{"SDR sharp bilinear", false, true, false, 4, 0, 0, 0.5f},
 		{"HDR point sampling", true, false, true, 0, 0, 1, 1},
 		{"mask point sampling", true, false, true, 0, 11, 0, 1}
 	};
-	for (const auto& test : cases) {
+	std::vector<Case> checks(std::begin(cases), std::end(cases));
+	if (dump) {
+		for (int pass = 0; pass <= 11; ++pass) {
+			if (pass == 9) continue; // no pass 9 in the production shader
+			for (int filter = 0; filter <= 4; ++filter)
+				for (int flags = 0; flags < 8; ++flags)
+					checks.push_back({"comparison", !!(flags & 1),
+						!!(flags & 2), !!(flags & 4), (float)filter,
+						(float)pass, (flags & 4) ? 5.0f : 0.0f, 0});
+		}
+	}
+	for (const auto& test : checks) {
 		textureInfo.width = textureInfo.height = 2;
 		textureInfo.format = test.srgb ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB
 			: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -165,7 +190,7 @@ int main(int argc, char **argv) {
 		// Layout matches ShaderConstants: sixteen float4 groups.
 		float uniforms[16][4] {};
 		uniforms[0][0] = uniforms[0][1] = 2;
-		uniforms[0][2] = uniforms[0][3] = 1;
+		uniforms[0][2] = uniforms[0][3] = (float)targetSize;
 		uniforms[1][0] = test.filter;
 		uniforms[1][1] = uniforms[1][2] = 2;
 		uniforms[2][0] = 1; // identity gamma
@@ -174,6 +199,25 @@ int main(int argc, char **argv) {
 		uniforms[15][1] = test.srgb ? 1.0f : 0.0f;
 		uniforms[15][2] = test.hdr ? 1.0f : 0.0f;
 		uniforms[15][3] = test.linear ? 1.0f : 0.0f;
+		if (dump) {
+			uniforms[1][3] = 0.75f;
+			uniforms[2][0] = 1.2f; uniforms[2][1] = 2.2f;
+			uniforms[2][2] = 0.3f; uniforms[2][3] = 0.2f;
+			uniforms[3][0] = uniforms[3][1] = 0.3f;
+			uniforms[3][2] = 1.4f; uniforms[3][3] = 1;
+			uniforms[5][1] = 2; uniforms[6][0] = 1;
+			uniforms[6][3] = (float)targetSize;
+			uniforms[7][0] = uniforms[8][1] = uniforms[9][2] = 1;
+			uniforms[10][1] = uniforms[10][2] = 0.25f;
+			uniforms[10][3] = 0.7f;
+			uniforms[11][0] = 0.2f; uniforms[11][3] = 0.25f;
+			uniforms[12][0] = 0.1f; uniforms[12][1] = 0.2f;
+			uniforms[12][2] = 0.3f; uniforms[12][3] = 0.4f;
+			uniforms[13][0] = 0.8f; uniforms[13][1] = 0.4f;
+			uniforms[13][2] = 1.2f;
+			uniforms[14][0] = 0.1f; uniforms[14][1] = 0.15f;
+			uniforms[14][2] = 0.2f;
+		}
 		SDL_PushGPUFragmentUniformData(command, 0, uniforms, sizeof uniforms);
 		SDL_DrawGPUPrimitives(render, 3, 1, 0, 0);
 		SDL_EndGPURenderPass(render);
@@ -181,7 +225,8 @@ int main(int argc, char **argv) {
 		copy = SDL_BeginGPUCopyPass(command);
 		SDL_GPUTextureRegion targetRegion {};
 		targetRegion.texture = target;
-		targetRegion.w = targetRegion.h = targetRegion.d = 1;
+		targetRegion.w = targetRegion.h = targetSize;
+		targetRegion.d = 1;
 		SDL_GPUTextureTransferInfo targetTransfer {};
 		targetTransfer.transfer_buffer = download;
 		SDL_DownloadFromGPUTexture(copy, &targetRegion, &targetTransfer);
@@ -192,7 +237,10 @@ int main(int argc, char **argv) {
 		const float *pixel = (const float *)SDL_MapGPUTransferBuffer(device,
 			download, false);
 		Check(pixel != nullptr, "Map sampling result");
-		for (int component = 0; component < 3; ++component) {
+		if (dump)
+			Check(std::fwrite(pixel, 16, targetSize * targetSize, dump)
+				== (size_t)(targetSize * targetSize), "Write comparison image");
+		for (int component = 0; !dump && component < 3; ++component) {
 			if (!std::isfinite(pixel[component])
 				|| std::fabs(pixel[component] - test.expected) > 0.003f) {
 				std::fprintf(stderr, "%s: got %.6f, expected %.6f\n",
@@ -206,7 +254,8 @@ int main(int argc, char **argv) {
 		SDL_ReleaseGPUTexture(device, source);
 	}
 	std::printf("GPU sampling passed on %s (%zu cases)\n",
-		SDL_GetGPUDeviceDriver(device), sizeof cases / sizeof cases[0]);
+		SDL_GetGPUDeviceDriver(device), checks.size());
+	if (dump) std::fclose(dump);
 	SDL_ReleaseGPUTransferBuffer(device, upload);
 	SDL_ReleaseGPUTransferBuffer(device, download);
 	SDL_ReleaseGPUTexture(device, target);

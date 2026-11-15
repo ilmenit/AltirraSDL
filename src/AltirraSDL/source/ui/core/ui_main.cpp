@@ -11,6 +11,8 @@
 #include "macos_menubar.h"
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#include "display_recovery.h"
+#include "display_advisor.h"
 // imgui_impl_opengl3 + DisplayBackendGL are now used on every platform,
 // including WASM.  The runtime `if (s_usingGLBackend)` checks below
 // pick the right path per active backend.
@@ -2836,6 +2838,8 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	if (state.showCompatWarning)     ATUIRenderCompatWarning(sim, state);
 	if (ATUIHelpHasPendingTopic()) state.showHelpContents = true;
 	if (state.showHelpContents) ATUIRenderHelpContents(state);
+	ATDisplayRecovery::RenderUI(ATUIIsGamingMode());
+	ATDisplayAdvisor::RenderUI(ATUIIsGamingMode());
 	if (state.showExitConfirm)       ATUIRenderExitConfirm(sim, state);
 	ATUIRenderDiskExplorer(sim, state, window);
 	ATUIRenderCartridgeExplorer(state, window);

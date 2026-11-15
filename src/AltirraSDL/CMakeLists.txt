@@ -58,6 +58,8 @@ target_sources(AltirraSDL PRIVATE
     source/display/display_sdl3.cpp
     source/display/video_output.cpp
     source/display/display_backend.cpp
+    source/display/display_recovery.cpp
+    source/display/display_advisor.cpp
     source/display/display_backend_sdlgpu.cpp
     source/display/display_backend_sdl.cpp
 
@@ -1701,3 +1703,10 @@ if(WIN32)
 elseif(UNIX AND NOT APPLE AND NOT ANDROID AND NOT EMSCRIPTEN)
     target_sources(AltirraSDL PRIVATE source/ui/core/ui_accessibility_linux.cpp)
 endif()
+
+# Recovery records belong to this shader revision, never a previous build.
+set(_recovery_shader "${CMAKE_CURRENT_SOURCE_DIR}/source/display/shaders/generated/sdlgpu_screenfx_frag_spv.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_recovery_shader}")
+file(SHA256 "${_recovery_shader}" _recovery_shader_hash)
+set_source_files_properties(source/display/display_recovery.cpp PROPERTIES
+    COMPILE_DEFINITIONS "AT_GRAPHICS_RECOVERY_BUILD=\"${_recovery_shader_hash}\"")

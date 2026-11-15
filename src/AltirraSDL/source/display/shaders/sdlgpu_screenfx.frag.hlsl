@@ -110,10 +110,13 @@ float4 SampleBicubic(float2 uv) {
 	float4 sum = 0.0;
 	float weightSum = 0.0;
 
-	[unroll]
+	// Keep the bounded kernel as loops. Unrolling duplicates the HDR sampling
+	// branches at every tap and makes cold Mesa pipeline compilation stall.
+	// Preserve tap order, weights, and decoding before interpolation.
+	[loop]
 	for (int y = -1; y <= 2; ++y) {
 		float wy = CubicWeight((float)y - f.y);
-		[unroll]
+		[loop]
 		for (int x = -1; x <= 2; ++x) {
 			float wx = CubicWeight((float)x - f.x);
 			float w = wx * wy;

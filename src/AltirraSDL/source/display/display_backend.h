@@ -70,6 +70,7 @@ public:
 
 	// Finalize and present the frame (swap buffers / SDL_RenderPresent).
 	virtual void Present() = 0;
+	virtual bool IsPresentationHealthy() const { return true; }
 
 	// Read back pixels from the framebuffer for frame capture.
 	// Returns true on success.
