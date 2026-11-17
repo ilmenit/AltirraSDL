@@ -991,7 +991,7 @@ static bool ProcessCommandLine(int argc, char **argv, const char* workingDirecto
 			else if (strcasecmp(val, "512K") == 0) g_sim.SetAxlonMemoryMode(5);
 			else if (strcasecmp(val, "1024K") == 0) g_sim.SetAxlonMemoryMode(6);
 			else if (strcasecmp(val, "2048K") == 0) g_sim.SetAxlonMemoryMode(7);
-			else if (strcasecmp(val, "4096K") == 0) g_sim.SetAxlonMemoryMode(7);
+			else if (strcasecmp(val, "4096K") == 0) g_sim.SetAxlonMemoryMode(8);
 			else LOG_INFO("CmdLine", "Invalid Axlon memory size: %s", val);
 			continue;
 		}
