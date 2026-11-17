@@ -223,7 +223,7 @@ void ATCassetteEmulator::ColdReset() {
 	mbMotorEnable = false;
 	mbPlayEnable = false;
 	mbDataLineState = false;
-	mSIOPhase = 0;
+	mSIOPhase = SIOPhase::WaitForStartBit;
 	mDataByte = 0;
 	mDataBitCounter = 0;
 
@@ -773,7 +773,7 @@ uint8 ATCassetteEmulator::ReadBlock(uint16 bufadr0, uint16 len, ATCPUEmulatorMem
 	const sint32 cyclesPerHalfBit = VDRoundToInt32(kATCassetteCyclesPerDataSample / 19.0f * 0.5f * (float)bitDelta);
 	PokeyChangeSerialRate(cyclesPerHalfBit);
 
-	mSIOPhase = 0;
+	mSIOPhase = SIOPhase::WaitForStartBit;
 	mbOutputBit = true;
 	idealBaudRate = kATCassetteDataSampleRate * 19.0f / (float)bitDelta;
 	//VDDEBUG("CAS: Sync mark found. Computed baud rate = %.2f baud\n", idealBaudRate);
@@ -1162,7 +1162,7 @@ void ATCassetteEmulator::PokeyChangeSerialRate(uint32 divisor) {
 }
 
 void ATCassetteEmulator::PokeyResetSerialInput() {
-	mSIOPhase = 0;
+	mSIOPhase = SIOPhase::WaitForStartBit;
 
 	if (g_ATLCCasDecoder.IsEnabled())
 		g_ATLCCasDecoder("[%.1f / %d] Serial input hardware reset\n", (float)mPosition * kATCassetteMSPerDataSample, mPosition);
@@ -1530,25 +1530,29 @@ ATCassetteEmulator::BitResult ATCassetteEmulator::ProcessBit() {
 	if (dataBit != mbOutputBit) {
 		mbOutputBit = dataBit;
 
-		// Alright, we've seen a transition, so this must be the start of a data bit.
-		// Set ourselves up to sample.
-		if (mSIOPhase == 0 && !dataBit) {
-			mSIOPhase = 1;
+		// Transition on data line. If it's a falling edge, restart the serial clock
+		// and prepare to sample the start bit one half bit later.
+		if (mSIOPhase == SIOPhase::WaitForStartBit) {
+			if (!dataBit) {
+				mSIOPhase = SIOPhase::VerifyStartBit;
 
-			mbDataBitEdge = true;
-			mDataBitCounter = mDataBitHalfPeriod - (kATCassetteCyclesPerDataSample >> 1);
-			mStartBitPosition = mPosition - 1;
+				mDataBitCounter = mDataBitHalfPeriod - (kATCassetteCyclesPerDataSample >> 1);
+				mbDataBitEdge = true;
+				mStartBitPosition = mPosition - 1;
+			}
 			return kBR_NoOutput;
-		} else if (mSIOPhase > 0 && g_ATLCCasData2.IsEnabled()) {
-			g_ATLCCasData2("Phase error %+d/%d\n"
-				, mbDataBitEdge ? mDataBitHalfPeriod - mDataBitCounter : mDataBitCounter
-				, mDataBitHalfPeriod*2
-			);
+		} else {
+			if (g_ATLCCasData2.IsEnabled()) {
+				g_ATLCCasData2("Phase error %+d/%d\n"
+					, mbDataBitEdge ? mDataBitHalfPeriod - mDataBitCounter : mDataBitCounter
+					, mDataBitHalfPeriod*2
+				);
+			}
 		}
+	} else {
+		if (mSIOPhase == SIOPhase::WaitForStartBit)
+			return kBR_NoOutput;
 	}
-
-	if (mSIOPhase == 0)
-		return kBR_NoOutput;
 
 	mDataBitCounter += kATCassetteCyclesPerDataSample;
 	if (mDataBitCounter < mDataBitHalfPeriod)
@@ -1583,31 +1587,39 @@ ATCassetteEmulator::BitResult ATCassetteEmulator::ProcessBit() {
 	if (g_ATLCCasDecoder.IsEnabled())
 		g_ATLCCasDecoder("[%.1f / %d] Bit cell %d sample - %d\n", (float)mPosition * kATCassetteMSPerDataSample, mPosition, mSIOPhase, dataBit);
 
-	if (mSIOPhase == 1) {
+	if (mSIOPhase == SIOPhase::VerifyStartBit) {
 		// Check for start bit.
 		if (!mbOutputBit) {
-			mSIOPhase = 2;
+			mSIOPhase = SIOPhase::SampleDataBit0;
 		} else
-			mSIOPhase = 0;
+			mSIOPhase = SIOPhase::WaitForStartBit;
+	} else if (mSIOPhase < SIOPhase::VerifyStopBit) {
+		// data bit -- shift in a bit and advance phase
+		mDataByte = (mDataByte >> 1) + (mbOutputBit ? 0x80 : 0x00);
+		mSIOPhase = SIOPhase(std::to_underlying(mSIOPhase) + 1);
 	} else {
-		++mSIOPhase;
-		if (mSIOPhase > 10) {
-			mSIOPhase = 0;
+		// verify stop bit
+		if (!ByteDecoded.IsEmpty()) {
+			ByteDecoded.InvokeAll(mStartBitPosition, mPosition - 1, mDataByte, !mbOutputBit, mDataBitHalfPeriod);
+		}
 
-			if (!ByteDecoded.IsEmpty()) {
-				ByteDecoded.InvokeAll(mStartBitPosition, mPosition - 1, mDataByte, !mbOutputBit, mDataBitHalfPeriod);
-			}
-
-			// Check for stop bit.
-			if (mbOutputBit) {
-				// We got a mark -- send the byte on.
-				return kBR_ByteReceived;
-			} else {
-				// Framing error -- drop the byte.
-				return kBR_FramingError;
-			}
+		if (mbOutputBit) {
+			// We got a mark -- send the byte on, and immediately jump to
+			// WaitForStartBit as the clock is reset and stopped. It will
+			// restart when the next falling edge is seen.
+			mSIOPhase = SIOPhase::WaitForStartBit;
+			return kBR_ByteReceived;
 		} else {
-			mDataByte = (mDataByte >> 1) + (mbOutputBit ? 0x80 : 0x00);
+			// Framing error -- drop the byte and jump to VerifyStartBit phase.
+			// The clock continues to run. If the data line is still low at
+			// the next sampling position, the start bit will be accepted and
+			// a new byte will begin shifting in. If the data line is high
+			// at that point, the clock will stop+reset and the wait for a new
+			// falling edge will begin. Notably, positive glitches between the
+			// stop bit center and next bit center do NOT reset the clock.
+			mSIOPhase = SIOPhase::VerifyStartBit;
+			mStartBitPosition = mPosition - 1;
+			return kBR_FramingError;
 		}
 	}
 

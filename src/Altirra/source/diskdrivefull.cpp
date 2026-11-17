@@ -1086,6 +1086,7 @@ uint32 ATDeviceDiskDriveFull::GetComputerPowerOnDelay() const {
 void ATDeviceDiskDriveFull::WarmReset() {
 	// If the computer resets, its transmission is interrupted.
 	mDriveScheduler.UnsetEvent(mpEventDriveReceiveBit);
+	UpdateClockRatios();
 }
 
 void ATDeviceDiskDriveFull::ComputerColdReset() {
@@ -1347,8 +1348,8 @@ void ATDeviceDiskDriveFull::OnScheduledEvent(uint32 id) {
 
 		if (mReceiveShiftRegister) {
 			mReceiveTimingAccum += mReceiveTimingStep;
-			mpEventDriveReceiveBit = mDriveScheduler.AddEvent(mReceiveTimingAccum >> 10, this, kEventId_DriveReceiveBit);
-			mReceiveTimingAccum &= 0x3FF;
+			mpEventDriveReceiveBit = mDriveScheduler.AddEvent(mReceiveTimingAccum >> 16, this, kEventId_DriveReceiveBit);
+			mReceiveTimingAccum &= 0xFFFF;
 		}
 
 		if (mb1050)
@@ -1386,6 +1387,7 @@ void ATDeviceDiskDriveFull::OnScheduledEvent(uint32 id) {
 
 void ATDeviceDiskDriveFull::OnCommandStateChanged(bool asserted) {
 	Sync();
+	UpdateClockRatios();
 
 	if (mb1050)
 		mRIOT.SetInputB(asserted ? 0xFF : 0x00, 0x80);
@@ -1405,10 +1407,39 @@ void ATDeviceDiskDriveFull::OnReceiveByte(uint8 c, bool command, uint32 cyclesPe
 
 	mReceiveShiftRegister = c + c + 0x200;
 
-	// The conversion fraction we need here is 64/229, but that denominator is awkward.
-	// Approximate it with 286/1024.
-	mReceiveTimingAccum = 0x200;
-	mReceiveTimingStep = mb1050 || mDeviceType == kDeviceType_810Turbo ? cyclesPerBit * 572 : cyclesPerBit * 286;
+	// convert machine cycle serial timing to drive timing
+	const uint32 lastSyncTime = GetLastSyncTime();
+	uint32 machineCycleDelta = lastSyncTime - mReceiveTimingLastSync;
+	mReceiveTimingLastSync = lastSyncTime;
+
+	// check if the last byte was recent enough
+	if (machineCycleDelta > 1000) {
+		// no -- reset timing offset
+		mReceiveTimingOffset = UINT32_C(0x8000);
+	} else {
+		// yes -- continue sub-cycle timing from last byte
+		mReceiveTimingOffset += machineCycleDelta * mReceiveMachineToDriveCyclesFrac;
+		mReceiveTimingOffset &= 0xFFFF;
+	}
+
+	// Compute fractional cycle offset.
+	//
+	// POKEY's output and drive sampling are both considered to instantly occur
+	// at the start of each cycle. When an output transition occurs in the middle
+	// of a drive cycle, it won't be sensed until the next cycle, so we need a
+	// fractional cycle delay from the output transition sub-cycle offset to the
+	// next drive cycle.
+	//
+	// Additionally, an additional offset is added for the enlongated start bit
+	// produced by POKEY. The difference in output shift/load timing results in
+	// the start bit being ~2.8 machine cycles longer than data bits. This is
+	// important for some high-speed protocols like TOMS 1050. If bytes are
+	// transferred back to back, this also results in the previous byte's stop
+	// bit being truncated by the same amount; this is handled implicitly when
+	// new bytes are sent to POKEY.
+	mReceiveTimingAccum = (0xFFFF - mReceiveTimingOffset) + (mReceiveMachineToDriveCyclesFrac * 28)/10;
+
+	mReceiveTimingStep = cyclesPerBit * mReceiveMachineToDriveCyclesFrac;
 
 	mDriveScheduler.SetEvent(1, this, kEventId_DriveReceiveBit, mpEventDriveReceiveBit);
 }
@@ -2249,4 +2280,10 @@ void ATDeviceDiskDriveFull::UpdateAutoSpeed() {
 
 	// default clock speed
 	mFDC.SetSpeeds(speed, clockMultiplier, mb1050);
+}
+
+void ATDeviceDiskDriveFull::UpdateClockRatios() {
+	const double driveRate = mb1050 || mDeviceType == kDeviceType_810Turbo ? 1000000.0 : 500000.0;
+
+	mReceiveMachineToDriveCyclesFrac = VDRoundToInt32(65536.0 * driveRate / mpScheduler->GetRateDouble());
 }

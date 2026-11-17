@@ -154,6 +154,7 @@ protected:
 	void UpdateWriteProtectOverride();
 	void UpdateSlowSwitch();
 	void UpdateAutoSpeed();
+	void UpdateClockRatios();
 
 	enum {
 		kEventId_DriveReceiveBit = kEventId_FirstCustom,
@@ -173,8 +174,11 @@ protected:
 	static constexpr uint32 kDiskChangeStepMS = 50;
 
 	uint32 mReceiveShiftRegister = 0;
+	uint32 mReceiveTimingOffset = 0;
 	uint32 mReceiveTimingAccum = 0;
 	uint32 mReceiveTimingStep = 0;
+	uint32 mReceiveMachineToDriveCyclesFrac = 0;
+	uint32 mReceiveTimingLastSync = 0;
 
 	uint32 mCurrentTrack = 0;
 	bool mbROMBankAlt = false;
