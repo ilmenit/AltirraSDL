@@ -416,8 +416,7 @@ void RenderSystemCategory(ATSimulator &sim) {
 
 	if (is5200) ImGui::BeginDisabled();
 	if (ImGui::Combo("##VideoStandard", &vsIdx, kVideoStdLabels, kVideoStdCount)) {
-		sim.SetVideoStandard(kVideoStdValues[vsIdx]);
-		ATUIUpdateSpeedTiming();
+		ATSetVideoStandard(kVideoStdValues[vsIdx]);
 		// Conditionally cold reset based on Ease of Use setting
 		// (matches Windows ATUIConfirmVideoStandardChangeResetComplete)
 		if (ATUIIsResetNeeded(kATUIResetFlag_VideoStandardChange))
@@ -426,8 +425,8 @@ void RenderSystemCategory(ATSimulator &sim) {
 
 	ImGui::SameLine();
 	if (ImGui::Button("Toggle NTSC/PAL")) {
-		sim.SetVideoStandard(curVS == kATVideoStandard_NTSC ? kATVideoStandard_PAL : kATVideoStandard_NTSC);
-		ATUIUpdateSpeedTiming();
+		ATSetVideoStandard(curVS == kATVideoStandard_NTSC
+			? kATVideoStandard_PAL : kATVideoStandard_NTSC);
 		if (ATUIIsResetNeeded(kATUIResetFlag_VideoStandardChange))
 			sim.ColdReset();
 	}

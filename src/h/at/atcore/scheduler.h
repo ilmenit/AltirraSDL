@@ -160,6 +160,8 @@ public:
 	// doesn't use this other than to return it to whoever asks.
 	void SetRate(const VDFraction& f) { mRate = f; }
 	VDFraction GetRate() const { return mRate; }
+	double GetRateDouble() const { return mRate.asDouble(); }
+	double GetInvRateDouble() const { return mRate.AsInverseDouble(); }
 
 	// Set the maximum delay between requested calls to ProcessNextEvent(). This ensures
 	// that the simulator cycles periodically even with no events or very long event

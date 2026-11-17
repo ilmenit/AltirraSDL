@@ -187,21 +187,14 @@ static void CmdColdReset() {
 	doReset();
 }
 
-static void CmdToggleNTSCPAL() {
-	// NTSC/PAL toggle is also reset-equivalent for sync purposes —
-	// keep it gated against engaged sessions.  No confirm dialog: during
-	// WaitingForJoiner, a fresh joiner picks up whatever standard the host
-	// is on at handshake.
-	if (ATNetplayGlue::IsSessionEngaged()) return;
-	if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
-		g_sim.SetVideoStandard(kATVideoStandard_PAL);
-	else
-		g_sim.SetVideoStandard(kATVideoStandard_NTSC);
-}
-
 static void CmdSetVideoStandard(ATVideoStandard standard) {
 	if (ATNetplayGlue::IsSessionEngaged()) return;
-	g_sim.SetVideoStandard(standard);
+	ATSetVideoStandard(standard);
+}
+
+static void CmdToggleNTSCPAL() {
+	CmdSetVideoStandard(g_sim.GetVideoStandard() == kATVideoStandard_NTSC
+		? kATVideoStandard_PAL : kATVideoStandard_NTSC);
 }
 
 static ATUICmdState QueryVideoStandard(ATVideoStandard standard) {
@@ -582,7 +575,7 @@ namespace {
 	bool IsNot5200() { return g_sim.GetHardwareMode() != kATHardwareMode_5200; }
 	bool IsNetplaySessionNotEngaged() { return !ATNetplayGlue::IsSessionEngaged(); }
 	bool IsNetplayNotLockstepping() { return !ATNetplayGlue::IsLockstepping(); }
-	bool IsVideoStandardPALFamilyAvailable() { return IsNetplaySessionNotEngaged() && IsNot5200(); }
+	bool CanChangeVideoStandard() { return IsNetplaySessionNotEngaged() && IsNot5200(); }
 	bool IsFullscreen() { return (SDL_GetWindowFlags(g_pWindow) & SDL_WINDOW_FULLSCREEN) != 0; }
 
 	void SetOverscanMode(ATGTIAEmulator::OverscanMode mode) {
@@ -1077,23 +1070,23 @@ static const ATUICommand kSDL3CommandsExtra[] = {
 	{ "System.VideoStandardNTSC",
 		[] { CmdSetVideoStandard(kATVideoStandard_NTSC); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC); } },
 	{ "System.VideoStandardPAL",
-		[] { CmdSetVideoStandard(kATVideoStandard_PAL); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_PAL); } },
 	{ "System.VideoStandardSECAM",
-		[] { CmdSetVideoStandard(kATVideoStandard_SECAM); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_SECAM); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_SECAM); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_SECAM); } },
 	{ "System.VideoStandardNTSC50",
-		[] { CmdSetVideoStandard(kATVideoStandard_NTSC50); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC50); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_NTSC50); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_NTSC50); } },
 	{ "System.VideoStandardPAL60",
-		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
 	{ "Video.StandardNTSC",
 		[] { CmdSetVideoStandard(kATVideoStandard_NTSC); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC); } },
 	{ "Video.StandardPAL",
-		[] { CmdSetVideoStandard(kATVideoStandard_PAL); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_PAL); } },
 	{ "Video.StandardSECAM",
-		[] { CmdSetVideoStandard(kATVideoStandard_SECAM); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_SECAM); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_SECAM); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_SECAM); } },
 	{ "Video.StandardNTSC50",
-		[] { CmdSetVideoStandard(kATVideoStandard_NTSC50); }, IsNetplaySessionNotEngaged, [] { return QueryVideoStandard(kATVideoStandard_NTSC50); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_NTSC50); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_NTSC50); } },
 	{ "Video.StandardPAL60",
-		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, IsVideoStandardPALFamilyAvailable, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
+		[] { CmdSetVideoStandard(kATVideoStandard_PAL60); }, CanChangeVideoStandard, [] { return QueryVideoStandard(kATVideoStandard_PAL60); } },
 
 	// =====================================================================
 	// Debug (cmddebug.cpp) — debugger option/mode commands that map
@@ -1254,7 +1247,7 @@ static const ATUICommand kSDL3Commands[] = {
 	{ "Console.HoldKeys",              CmdHoldKeys,             nullptr, nullptr, nullptr },
 	{ "System.WarmReset",              CmdWarmReset,             nullptr, nullptr, nullptr },
 	{ "System.ColdReset",              CmdColdReset,             nullptr, nullptr, nullptr },
-	{ "Video.ToggleStandardNTSCPAL",   CmdToggleNTSCPAL,       IsNetplaySessionNotEngaged, nullptr, nullptr },
+	{ "Video.ToggleStandardNTSCPAL",   CmdToggleNTSCPAL,       CanChangeVideoStandard, nullptr, nullptr },
 	{ "View.NextANTICVisMode",         CmdNextANTICVisMode,     nullptr, nullptr, nullptr },
 	{ "View.NextGTIAVisMode",          CmdNextGTIAVisMode,      nullptr, nullptr, nullptr },
 	{ "System.TogglePause",            CmdTogglePause,          IsNetplayNotLockstepping, [] { return ToChecked(g_sim.IsPaused()); }, nullptr },

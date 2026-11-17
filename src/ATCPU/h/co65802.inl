@@ -1534,6 +1534,14 @@ for(;;) {
 			AT_CPU_WRITE_BYTE_HL(rSH, rS, (rPC - 1) >> 8);
 			if (!rS--)
 				--rSH;
+			if (mbEmulationFlag)
+				rSH = 1;
+			END_SUB_CYCLE();
+
+		case kStatePushPCHM1NativeNoEmuWrap:
+			AT_CPU_WRITE_BYTE_HL(rSH, rS, (rPC - 1) >> 8);
+			if (!rS--)
+				--rSH;
 			END_SUB_CYCLE();
 
 		case kStatePopNative:
@@ -1570,6 +1578,12 @@ for(;;) {
 			rPC = AT_CPU_READ_BYTE_HL(rSH, rS);
 			END_SUB_CYCLE();
 
+		case kStatePopPCLNativeNoEmuWrap:
+			if (!++rS)
+				++rSH;
+			rPC = AT_CPU_READ_BYTE_HL(rSH, rS);
+			END_SUB_CYCLE();
+
 		case kStatePopPCHNative:
 			if (!++rS && !mbEmulationFlag)
 				++rSH;
@@ -1582,10 +1596,18 @@ for(;;) {
 			rPC += ((uint32)AT_CPU_READ_BYTE_HL(rSH, rS) << 8) + 1;
 			END_SUB_CYCLE();
 
+		case kStatePopPCHP1NativeNoEmuWrap:
+			if (!++rS)
+				++rSH;
+			rPC += ((uint32)AT_CPU_READ_BYTE_HL(rSH, rS) << 8) + 1;
+			END_SUB_CYCLE();
+
 		case kStatePopPBKNative:
-			if (!++rS && !mbEmulationFlag)
+			if (!++rS)
 				++rSH;
 			rK = AT_CPU_READ_BYTE_HL(rSH, rS);
+			if (mbEmulationFlag)
+				rSH = 1;
 			END_SUB_CYCLE();
 
 		case kStateRep:

@@ -1592,7 +1592,8 @@ void ATWasmColdReset() {
 // ATSimulator::IsVideo50Hz so the button label tracks the live state.
 extern "C" EMSCRIPTEN_KEEPALIVE
 int ATWasmGetVideoStandard() {
-	if (!g_wasmSimReady) return 0;
+	if (!g_wasmSimReady || g_sim.GetHardwareMode() == kATHardwareMode_5200)
+		return -1;
 	return g_sim.IsVideo50Hz() ? 1 : 0;
 }
 
@@ -1608,7 +1609,7 @@ void ATWasmToggleVideoStandard() {
 		|| now == kATVideoStandard_PAL60)
 		? kATVideoStandard_PAL
 		: kATVideoStandard_NTSC;
-	g_sim.SetVideoStandard(next);
+	ATSetVideoStandard(next);
 }
 
 // JS-side bar button (CRT On/Off).  Returns 0=None, 1=Basic, 2=Preset.

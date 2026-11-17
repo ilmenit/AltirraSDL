@@ -2548,13 +2548,13 @@
         touchPrefSeeded = true;
       }
 
-      // Region (PAL/NTSC).  Reads g_sim.IsVideo50Hz() — needs sim ready.
+      // Region reports -1 when the video standard is fixed.
       if (btnRegion && Module._ATWasmGetVideoStandard) {
         try {
           if (simReady) {
             const is50 = Module._ATWasmGetVideoStandard();
-            btnRegion.disabled = false;
-            btnRegion.textContent = is50 ? 'PAL' : 'NTSC';
+            btnRegion.disabled = is50 < 0;
+            btnRegion.textContent = is50 > 0 ? 'PAL' : 'NTSC';
           } else {
             btnRegion.disabled = true;
           }

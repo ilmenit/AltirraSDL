@@ -415,6 +415,7 @@ public:	// IATCPUBreakpointHandler
 
 protected:
 	virtual void Sync() = 0;
+	uint32 GetLastSyncTime() const { return mLastSync; }
 
 private:
 	void CancelStep();

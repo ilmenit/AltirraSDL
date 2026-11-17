@@ -370,9 +370,9 @@ void OnCommandVideoToggleStandardNTSCPAL() {
 		return;
 
 	if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
-		g_sim.SetVideoStandard(kATVideoStandard_PAL);
+		ATSetVideoStandard(kATVideoStandard_PAL);
 	else
-		g_sim.SetVideoStandard(kATVideoStandard_NTSC);
+		ATSetVideoStandard(kATVideoStandard_NTSC);
 
 	ATUIUpdateSpeedTiming();
 

@@ -431,8 +431,10 @@ void ATPokeyEmulator::ReceiveSIOByte(uint8 c, uint32 cyclesPerBit, bool simulate
 		}
 	}
 
-	if (mbTraceSIO)
-		(*mpConsoleOut)("POKEY: Receiving byte (c=%02X; %02X %02X) at %u cycles/bit (%.1f baud)", c, mSERIN, mSerialInputShiftRegister, cyclesPerBit, 7159090.0f / 4.0f / (float)cyclesPerBit);
+	if (mbTraceSIO) {
+		(*mpConsoleOut)("POKEY: Receiving byte (c=%02X; %02X %02X) at %u cycles/bit (%.1f baud)", c, mSERIN, mSerialInputShiftRegister, cyclesPerBit,
+			cyclesPerBit ? 7159090.0f / 4.0f / (float)cyclesPerBit : 0);
+	}
 
 	VDStringA sioDataInfo;
 
@@ -468,7 +470,7 @@ void ATPokeyEmulator::ReceiveSIOByte(uint8 c, uint32 cyclesPerBit, bool simulate
 			, mTraceByteIndex
 			, c
 			, cyclesPerBit
-			, 7159090.0f / 4.0f / (float)cyclesPerBit
+			, cyclesPerBit ? 7159090.0f / 4.0f / (float)cyclesPerBit : 0
 			, extraMsg
 		);
 

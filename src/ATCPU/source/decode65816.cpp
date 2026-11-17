@@ -635,7 +635,7 @@ bool ATCPUDecoderGenerator65816::DecodeInsn(uint8 opcode, bool unalignedDP, bool
 			*mpDstState++ = kStatePushPBKNative;		// 4: push program bank
 			*mpDstState++ = kStateWait;					// 5: internal operation
 			*mpDstState++ = kStateReadAddrB;			// 6: read jump address bank
-			*mpDstState++ = kStatePushPCHM1Native;		// 7: push PCH
+			*mpDstState++ = kStatePushPCHM1NativeNoEmuWrap;		// 7: push PCH
 			*mpDstState++ = kStatePushPCLM1Native;		// 8: push PCL
 			*mpDstState++ = kState816_LongAddrToPC;
 			break;
@@ -1148,8 +1148,8 @@ bool ATCPUDecoderGenerator65816::DecodeInsn(uint8 opcode, bool unalignedDP, bool
 		case 0x6B:	// RTL
 			*mpDstState++ = kStateWait;				// 2
 			*mpDstState++ = kStateWait;				// 3
-			*mpDstState++ = kStatePopPCLNative;		// 4
-			*mpDstState++ = kStatePopPCHP1Native;	// 5
+			*mpDstState++ = kStatePopPCLNativeNoEmuWrap;		// 4
+			*mpDstState++ = kStatePopPCHP1NativeNoEmuWrap;	// 5
 			*mpDstState++ = kStatePopPBKNative;		// 6
 			break;
 

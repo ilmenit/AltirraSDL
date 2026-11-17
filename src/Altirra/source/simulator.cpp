@@ -5640,13 +5640,13 @@ void ATSimulator::InitMemoryMap() {
 
 	if (!mpUltimate1MB) {
 		switch(mMemoryMode) {
-			case kATMemoryMode_128K:		floatMask &= ~0x0C; break;
-			case kATMemoryMode_256K:		floatMask &= ~0x4C; break;
-			case kATMemoryMode_320K:		floatMask &= ~0xCC; break;
-			case kATMemoryMode_576K:		floatMask &= ~0x6C; break;
-			case kATMemoryMode_1088K:		floatMask &= ~0x6E; break;
-			case kATMemoryMode_320K_Compy:	floatMask &= ~0xCC; break;
-			case kATMemoryMode_576K_Compy:	floatMask &= ~0xCE; break;
+			case kATMemoryMode_128K:		floatMask &= 0b0'1110'0011; break;
+			case kATMemoryMode_256K:		floatMask &= 0b0'1000'0011; break;
+			case kATMemoryMode_320K:		floatMask &= 0b0'1000'0011; break;
+			case kATMemoryMode_576K:		floatMask &= 0b0'1000'0001; break;
+			case kATMemoryMode_1088K:		floatMask &= 0b0'0000'0001; break;
+			case kATMemoryMode_320K_Compy:	floatMask &= 0b0'0000'0011; break;
+			case kATMemoryMode_576K_Compy:	floatMask &= 0b0'0000'0001; break;
 		}
 
 		static_assert(kATMemoryModeCount == 15, "Add new memory mode to floating port B bit init");

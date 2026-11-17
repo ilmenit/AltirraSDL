@@ -800,6 +800,10 @@ void ATPIAEmulator::DumpState() {
 	);
 	ATConsolePrintf("Port B output:    %02X\n", state.mORB);
 	ATConsolePrintf("Port B input:     %02X\n", ComputePortBInput());
+
+	if (mpFloatingInputs && mpFloatingInputs->mFloatingInputMask)
+		ATConsolePrintf("Port B floating:  %02X\n", mpFloatingInputs->mFloatingInputMask & ~state.mDDRB);
+
 	ATConsolePrintf("Port B edge:      %s\n", mbPIAEdgeB ? "pending" : "none");
 }
 

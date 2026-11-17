@@ -265,7 +265,23 @@ private:
 	bool	mbCommandAsserted = true;
 	bool	mbFSKControlByCommandEnabled = false;
 	bool	mbFSKControlByDataEnabled = false;
-	int		mSIOPhase = 0;
+
+	enum class SIOPhase : int {
+		WaitForStartBit,
+		VerifyStartBit,
+		SampleDataBit0,
+		SampleDataBit1,
+		SampleDataBit2,
+		SampleDataBit3,
+		SampleDataBit4,
+		SampleDataBit5,
+		SampleDataBit6,
+		SampleDataBit7,
+		VerifyStopBit
+	};
+
+	SIOPhase mSIOPhase = SIOPhase::WaitForStartBit;
+
 	uint8	mDataByte = 0;
 	uint8	mThresholdZeroBit = 0;
 	uint8	mThresholdOneBit = 0;

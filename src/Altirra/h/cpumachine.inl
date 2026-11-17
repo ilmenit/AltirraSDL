@@ -2462,27 +2462,31 @@ for(;;) {
 			END_SUB_CYCLE();
 
 		case kStatePopPCLNative:
-			if (!++mS && !mbEmulationFlag)
+			if (!++mS)
 				++mSH;
 			mPC = AT_CPU_READ_BYTE_HL(mSH, mS);
 			END_SUB_CYCLE();
 
 		case kStatePopPCHNative:
-			if (!++mS && !mbEmulationFlag)
+			if (!++mS)
 				++mSH;
 			mPC += (uint32)AT_CPU_READ_BYTE_HL(mSH, mS) << 8;
 			END_SUB_CYCLE();
 
 		case kStatePopPCHP1Native:
-			if (!++mS && !mbEmulationFlag)
+			if (!++mS)
 				++mSH;
 			mPC += ((uint32)AT_CPU_READ_BYTE_HL(mSH, mS) << 8) + 1;
 			END_SUB_CYCLE();
 
 		case kStatePopPBKNative:
-			if (!++mS && !mbEmulationFlag)
+			if (!++mS)
 				++mSH;
 			mK = AT_CPU_READ_BYTE_HL(mSH, mS);
+
+			// last cycle -- must force SH=1 in emu mode
+			if (mbEmulationFlag)
+				mSH = 1;
 			END_SUB_CYCLE();
 
 		case kStatePopPCLRtl:
