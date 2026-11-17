@@ -180,3 +180,7 @@ commands for H:, PCLink and the 1030, command availability across modem
 wrappers, an H: file opened/read from BASIC then force-closed, and 1400XL
 stereo internal-audio control toggles. The Linux desktop workflow runs these
 checks alongside the earlier upstream UI regressions.
+
+Test29 extends the CPU target with the production 65802 coprocessor. JSL
+checks stack writes below page $01 and RTL checks pulls above it. Both cases
+assert that the emulation-mode stack high byte is restored to $01.
