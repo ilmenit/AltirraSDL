@@ -224,7 +224,6 @@ private:
 	};
 
 	BitResult ProcessBit();
-	void StartReceivingNewByte();
 
 	void StartAudio();
 	void StopAudio();

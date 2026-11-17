@@ -525,7 +525,8 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			int current = (sim.GetVideoStandard() == kATVideoStandard_PAL) ? 0 : 1;
 			static const char *items[] = { "PAL", "NTSC" };
 			if (ATTouchSegmented("Video Standard", &current, items, 2)) {
-				sim.SetVideoStandard(current == 0 ? kATVideoStandard_PAL : kATVideoStandard_NTSC);
+				ATSetVideoStandard(current == 0
+					? kATVideoStandard_PAL : kATVideoStandard_NTSC);
 				ATPersistMobileEdit();
 			}
 		}

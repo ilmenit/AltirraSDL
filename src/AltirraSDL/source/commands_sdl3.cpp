@@ -187,21 +187,14 @@ static void CmdColdReset() {
 	doReset();
 }
 
-static void CmdToggleNTSCPAL() {
-	// NTSC/PAL toggle is also reset-equivalent for sync purposes —
-	// keep it gated against engaged sessions.  No confirm dialog: during
-	// WaitingForJoiner, a fresh joiner picks up whatever standard the host
-	// is on at handshake.
-	if (ATNetplayGlue::IsSessionEngaged()) return;
-	if (g_sim.GetVideoStandard() == kATVideoStandard_NTSC)
-		g_sim.SetVideoStandard(kATVideoStandard_PAL);
-	else
-		g_sim.SetVideoStandard(kATVideoStandard_NTSC);
-}
-
 static void CmdSetVideoStandard(ATVideoStandard standard) {
 	if (ATNetplayGlue::IsSessionEngaged()) return;
-	g_sim.SetVideoStandard(standard);
+	ATSetVideoStandard(standard);
+}
+
+static void CmdToggleNTSCPAL() {
+	CmdSetVideoStandard(g_sim.GetVideoStandard() == kATVideoStandard_NTSC
+		? kATVideoStandard_PAL : kATVideoStandard_NTSC);
 }
 
 static ATUICmdState QueryVideoStandard(ATVideoStandard standard) {

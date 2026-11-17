@@ -1562,7 +1562,7 @@ ATCassetteEmulator::BitResult ATCassetteEmulator::ProcessBit() {
 
 	if (mbDataBitEdge) {
 		if (g_ATLCCasDecoder.IsEnabled())
-			g_ATLCCasDecoder("[%.1f / %d] Bit cell %d start  - %d\n", (float)mPosition * kATCassetteMSPerDataSample, mPosition, mSIOPhase, dataBit);
+			g_ATLCCasDecoder("[%.1f / %d] Bit cell %d start  - %d\n", (float)mPosition * kATCassetteMSPerDataSample, mPosition, static_cast<int>(mSIOPhase), dataBit);
 
 		// We were expecting the leading edge of a bit and didn't see a transition.
 		// Assume there is an invisible bit boundary and set ourselves up to sample
@@ -1585,7 +1585,7 @@ ATCassetteEmulator::BitResult ATCassetteEmulator::ProcessBit() {
 	// start                                         stop
 
 	if (g_ATLCCasDecoder.IsEnabled())
-		g_ATLCCasDecoder("[%.1f / %d] Bit cell %d sample - %d\n", (float)mPosition * kATCassetteMSPerDataSample, mPosition, mSIOPhase, dataBit);
+		g_ATLCCasDecoder("[%.1f / %d] Bit cell %d sample - %d\n", (float)mPosition * kATCassetteMSPerDataSample, mPosition, static_cast<int>(mSIOPhase), dataBit);
 
 	if (mSIOPhase == SIOPhase::VerifyStartBit) {
 		// Check for start bit.
@@ -1596,7 +1596,7 @@ ATCassetteEmulator::BitResult ATCassetteEmulator::ProcessBit() {
 	} else if (mSIOPhase < SIOPhase::VerifyStopBit) {
 		// data bit -- shift in a bit and advance phase
 		mDataByte = (mDataByte >> 1) + (mbOutputBit ? 0x80 : 0x00);
-		mSIOPhase = SIOPhase(std::to_underlying(mSIOPhase) + 1);
+		mSIOPhase = SIOPhase(static_cast<int>(mSIOPhase) + 1);
 	} else {
 		// verify stop bit
 		if (!ByteDecoded.IsEmpty()) {

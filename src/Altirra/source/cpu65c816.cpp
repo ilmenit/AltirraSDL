@@ -768,13 +768,15 @@ bool ATCPUEmulator::Decode65C816(uint8 opcode, bool unalignedDP, bool emu, bool 
 			*mpDstState++ = kStateWait;
 			*mpDstState++ = emu ? kStatePop : kStatePopNative;
 
-			if (emu)
+			if (emu) {
 				*mpDstState++ = kStateDtoP_noICheck;
-			else
+				*mpDstState++ = kStatePopPCL;
+				*mpDstState++ = kStatePopPCH;
+			} else {
 				*mpDstState++ = kStateDtoPNative_noICheck;
-
-			*mpDstState++ = kStatePopPCLNative;
-			*mpDstState++ = kStatePopPCHNative;
+				*mpDstState++ = kStatePopPCLNative;
+				*mpDstState++ = kStatePopPCHNative;
+			}
 
 			if (!emu)
 				*mpDstState++ = kStatePopPBKNative;
@@ -2135,10 +2137,9 @@ void ATCPUEmulator::Decode65816AddrDpIndX(bool unalignedDP, bool emu) {
 	*mpDstState++ = kStateWait;
 	*mpDstState++ = kState816ReadByte;	
 
-	// In emulation mode, (dp,X) wraps when reading its second byte even if DP is
-	// unaligned (DL!=0) -- but only when the direct page is in the first 256
-	// bytes of bank 0 (DH==0).  The dedicated state resolves the DH condition at
-	// runtime; native mode never wraps.
+	// MERGE NOTE: keep the fork's direct-page high-byte check for (dp,X).
+	// With an unaligned direct page, indexing to the first byte can cross
+	// pages. The second byte wraps in emulation mode only when DH is zero.
 	*mpDstState++ = !emu ? kStateReadIndAddrDp : kState816ReadIndAddrDpXInPage;
 
 	if (mbHistoryEnabled)

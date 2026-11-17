@@ -31,11 +31,61 @@ void ATConsoleTaggedPrintfImpl(const char *, ...) { Unexpected("tagged console p
 #include <array>
 #include <algorithm>
 #include <at/atcore/snapshot.h>
+#include <at/atcpu/co65802.h>
+#include <at/atcpu/execstate.h>
 #include <vd2/system/refcount.h>
 #include "cpumemory.h"
 #include "cpustates.h"
 
 namespace {
+bool CoprocessorLongStackWrap() {
+	alignas(2) std::array<uint8, 65536> memory {};
+	ATCoProc65802 cpu;
+	const uintptr base = reinterpret_cast<uintptr>(memory.data());
+	std::fill_n(cpu.GetReadMap(), 256, base);
+	std::fill_n(cpu.GetWriteMap(), 256, base);
+	cpu.ColdReset();
+
+	ATCPUExecState state {};
+	cpu.GetExecState(state);
+	state.m6502.mPC = 0x0800;
+	state.m6502.mK = 0x12;
+	state.m6502.mS = 1;
+	cpu.SetExecState(state);
+	const uint8 jsl[] = {0x22, 0x00, 0x09, 0x34};
+	std::copy(std::begin(jsl), std::end(jsl), memory.begin() + 0x0800);
+	cpu.AddCycles(8);
+	cpu.Run();
+	if (cpu.GetS() != 0x01FE || memory[0x0101] != 0x12
+		|| memory[0x0100] != 0x08 || memory[0x00FF] != 0x03)
+	{
+		fputs("65802 JSL did not cross below the emulation stack page\n", stderr);
+		return false;
+	}
+
+	// RTL pulls across the upper edge of the page before restoring SH.
+	cpu.GetExecState(state);
+	state.m6502.mPC = 0x0900;
+	state.m6502.mS = 0xFE;
+	cpu.SetExecState(state);
+	memory[0x0900] = 0x6B;
+	memory[0x01FF] = 0x45;
+	memory[0x0200] = 0x23;
+	memory[0x0201] = 0x67;
+	memory[0x2346] = 0xEA;
+	cpu.AddCycles(7); // Six for RTL, plus the next opcode fetch.
+	cpu.Run();
+	cpu.GetExecState(state);
+	if (cpu.GetS() != 0x0101 || state.m6502.mPC != 0x2346
+		|| state.m6502.mK != 0x67)
+	{
+		fputs("65802 RTL did not cross and restore the emulation stack page\n", stderr);
+		return false;
+	}
+
+	return true;
+}
+
 class SnapshotMemory final : public ATCPUEmulatorMemory {
 public:
 	std::array<uint8, 65536> bytes {};
@@ -173,6 +223,7 @@ bool SnapshotRoundtrips() {
 } // namespace
 
 int main(int argc, char **argv) {
+	if (!CoprocessorLongStackWrap()) return 1;
 	if (!SnapshotRoundtrips()) return 1;
 	if (argc != 2) return 2;
 	ATCPUTestOptions opts;

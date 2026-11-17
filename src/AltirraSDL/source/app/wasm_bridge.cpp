@@ -1608,7 +1608,7 @@ void ATWasmToggleVideoStandard() {
 		|| now == kATVideoStandard_PAL60)
 		? kATVideoStandard_PAL
 		: kATVideoStandard_NTSC;
-	g_sim.SetVideoStandard(next);
+	ATSetVideoStandard(next);
 }
 
 // JS-side bar button (CRT On/Off).  Returns 0=None, 1=Basic, 2=Preset.

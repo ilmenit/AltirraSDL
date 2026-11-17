@@ -27,6 +27,7 @@ This prerelease version:
    * Disk: Added option to reinterleave disks to 815 16:1 DD interleave.
    * Disk: Added support for MyDOS virtual disks with larger than single density capacity.
    * Disk: Added support for SpartaDOS virtual disks with 256 byte sectors.
+   * Disk: Added emulation of elongated start bit for improved turbo transfer reliability with full drive emulation.
    * Display: Added support for rendering to Wide Color Gamut (WCG) displays without HDR support.
    * Display: Reduced aliasing artifacts with dot mask.
    * GTIA: Added emulation of known defective GTIA types.
@@ -77,6 +78,7 @@ This prerelease version:
    * Display: Reverted IN.outputSize value to old behavior in custom effects for compatibility.
    * Display: Improved quality of scanlines and mask effects with distortion enabled.
    * Display: Fixed bloom breaking at extreme zoom factors.
+   * Display: Fixed artifacting and filtering modes not being updated properly when using the toggle NTSC/PAL buttons.
    * HDevice: Fixed a crash when write errors occurred during close operation.
    * HDevice: Fixed matching of filenames with no extension in long filename mode.
    * Printer: Fixed extraneous blank line on 825, 1025, and 1029 when printing an exactly full line.
@@ -87,6 +89,7 @@ This prerelease version:
    * SAP: Fixed converter causing player to swap channels when repeating a stereo type R file.
    * Save States: Fixed occasional invalid save state errors when loading a save state with 16-bit linked channels in use.
    * Save States: Fixed invalid save state problem with disk idle timer.
+   * Simulator: Adjusted floating port B bits to be more consistent; all memory expansions now have pull-ups on all used port B lines.
    * UI: 65C816 linear memory setting is now disabled when Rapidus is enabled since Rapidus settings take precedence.
    * UI: An error is now reported interactively if a single instance launch fails because the existing instance is running elevated as admin.
    * UI: Reset Window Layout wasn't resetting undocked panes.

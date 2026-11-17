@@ -1341,16 +1341,23 @@ void ATDeviceDiskDriveFull::ActivateButton(ATDeviceButton idx, bool state) {
 
 void ATDeviceDiskDriveFull::OnScheduledEvent(uint32 id) {
 	if (id == kEventId_DriveReceiveBit) {
-		const bool newState = (mReceiveShiftRegister & 1) != 0;
-
-		mReceiveShiftRegister >>= 1;
 		mpEventDriveReceiveBit = nullptr;
+		bool newState;
+		do {
+			newState = (mReceiveShiftRegister & 1) != 0;
+			mReceiveShiftRegister >>= 1;
+			if (!mReceiveShiftRegister)
+				break;
 
-		if (mReceiveShiftRegister) {
 			mReceiveTimingAccum += mReceiveTimingStep;
-			mpEventDriveReceiveBit = mDriveScheduler.AddEvent(mReceiveTimingAccum >> 16, this, kEventId_DriveReceiveBit);
+			const uint32 delay = mReceiveTimingAccum >> 16;
 			mReceiveTimingAccum &= 0xFFFF;
-		}
+			if (delay) {
+				mpEventDriveReceiveBit = mDriveScheduler.AddEvent(delay, this, kEventId_DriveReceiveBit);
+				break;
+			}
+			// Multiple input bits can arrive before the drive can sample again.
+		} while (true);
 
 		if (mb1050)
 			mRIOT.SetInputB(newState ? 0x00 : 0x40, 0x40);
@@ -1430,7 +1437,7 @@ void ATDeviceDiskDriveFull::OnReceiveByte(uint8 c, bool command, uint32 cyclesPe
 	// fractional cycle delay from the output transition sub-cycle offset to the
 	// next drive cycle.
 	//
-	// Additionally, an additional offset is added for the enlongated start bit
+	// Add an offset for the elongated start bit
 	// produced by POKEY. The difference in output shift/load timing results in
 	// the start bit being ~2.8 machine cycles longer than data bits. This is
 	// important for some high-speed protocols like TOMS 1050. If bytes are
@@ -2283,7 +2290,6 @@ void ATDeviceDiskDriveFull::UpdateAutoSpeed() {
 }
 
 void ATDeviceDiskDriveFull::UpdateClockRatios() {
-	const double driveRate = mb1050 || mDeviceType == kDeviceType_810Turbo ? 1000000.0 : 500000.0;
-
-	mReceiveMachineToDriveCyclesFrac = VDRoundToInt32(65536.0 * driveRate / mpScheduler->GetRateDouble());
+	mReceiveMachineToDriveCyclesFrac = VDRoundToInt32(
+		65536.0 * mDriveScheduler.GetRateDouble() * mpScheduler->GetInvRateDouble());
 }
