@@ -1592,7 +1592,8 @@ void ATWasmColdReset() {
 // ATSimulator::IsVideo50Hz so the button label tracks the live state.
 extern "C" EMSCRIPTEN_KEEPALIVE
 int ATWasmGetVideoStandard() {
-	if (!g_wasmSimReady) return 0;
+	if (!g_wasmSimReady || g_sim.GetHardwareMode() == kATHardwareMode_5200)
+		return -1;
 	return g_sim.IsVideo50Hz() ? 1 : 0;
 }
 

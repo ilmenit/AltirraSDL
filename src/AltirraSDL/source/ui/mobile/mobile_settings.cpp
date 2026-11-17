@@ -524,11 +524,13 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 		{
 			int current = (sim.GetVideoStandard() == kATVideoStandard_PAL) ? 0 : 1;
 			static const char *items[] = { "PAL", "NTSC" };
+			ImGui::BeginDisabled(sim.GetHardwareMode() == kATHardwareMode_5200);
 			if (ATTouchSegmented("Video Standard", &current, items, 2)) {
 				ATSetVideoStandard(current == 0
 					? kATVideoStandard_PAL : kATVideoStandard_NTSC);
 				ATPersistMobileEdit();
 			}
+			ImGui::EndDisabled();
 		}
 
 		// Memory Size
