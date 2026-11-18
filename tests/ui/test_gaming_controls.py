@@ -32,6 +32,7 @@ def emu(request, monkeypatch, tmp_path):
         '[User\\AltirraSDL\\Metadata]\n"FirstRunNudgeShown" = 1\n'
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.setenv("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
     with AltirraTestHarness(executable=request.config.getoption("--emu-path"),
                             startup_timeout=25, timeout=20,
                             extra_args=["--ui-mode", "gaming"]) as harness:
@@ -63,7 +64,9 @@ def pane(emu, name):
 @pytest.mark.parametrize("width,height", [(1280, 720), (640, 360), (480, 854)])
 def test_details_split_full_safe_area(emu, width, height):
     emu.send(f"set_window_size {width} {height}")
-    wait_for(emu, lambda: pane(emu, "##gamePreview_"))
+    wait_for(emu, lambda: (browser := pane(emu, "##GameBrowser"))
+             and (browser["w"], browser["h"]) == (width, height)
+             and pane(emu, "##gamePreview_"))
     browser = pane(emu, "##GameBrowser")
     library = pane(emu, "##Library_")
     game_list = pane(emu, "##GameList_")
@@ -85,8 +88,9 @@ def test_details_split_full_safe_area(emu, width, height):
 def test_controller_sticks_match_navigation_and_scrolling(emu):
     wait_for(emu, lambda: emu.find_item("##GameList", "##tile_1"))
     controller = emu.send("virtual_controller attach gamepad")["index"]
+    emu.wait_frames(8)
 
-    def input_event(control, code, value, frames=2):
+    def input_event(control, code, value, frames=1):
         emu.send(f"virtual_controller {control} {controller} {code} {value}")
         emu.wait_frames(frames)
         emu.send(f"virtual_controller {control} {controller} {code} 0")
@@ -98,8 +102,10 @@ def test_controller_sticks_match_navigation_and_scrolling(emu):
 
     # SDL_gamepad.h defines down/right as 12/14 and LX/LY/RY as 0/1/3.
     emu.click("##GameBrowser", "Grid##view")
+    emu.wait_frames(3)
     input_event("button", 12, 1)
-    assert focus("##tile_0")
+    focus_id = mobile(emu)["navFocusId"]
+    assert focus("##tile_0"), [item for item in emu.list_items() if item["id"] == focus_id]
     input_event("axis", 0, 32767)
     assert focus("##tile_1")
     input_event("button", 14, 1)
@@ -108,6 +114,7 @@ def test_controller_sticks_match_navigation_and_scrolling(emu):
     assert focus("##tile_2")
 
     emu.click("##GameBrowser", "List##view")
+    emu.wait_frames(3)
     input_event("axis", 1, 32767)
     assert focus("##game_0")
     input_event("axis", 1, 32767)
