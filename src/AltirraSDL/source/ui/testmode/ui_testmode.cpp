@@ -2582,20 +2582,57 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		const std::string finger = NextToken(cmd);
 		const std::string x = NextToken(cmd);
 		const std::string y = NextToken(cmd);
+		const std::string mode = NextToken(cmd);
 		SDL_Event event {};
 		if (action == "down") event.type = SDL_EVENT_FINGER_DOWN;
 		else if (action == "move") event.type = SDL_EVENT_FINGER_MOTION;
 		else if (action == "up") event.type = SDL_EVENT_FINGER_UP;
 		else if (action == "cancel") event.type = SDL_EVENT_FINGER_CANCELED;
-		if (!event.type || finger.empty() || x.empty() || y.empty())
-			return JsonError("usage: physical_touch <down|move|up|cancel> <finger> <x> <y>");
+		if (!event.type || finger.empty() || x.empty() || y.empty()
+			|| (!mode.empty() && mode != "ui"))
+			return JsonError("usage: physical_touch <down|move|up|cancel> <finger> <x> <y> [ui]");
+
+		int w = 0, h = 0;
+		if (mode == "ui" && !SDL_GetWindowSize(g_pWindow, &w, &h))
+			return JsonError(SDL_GetError());
 
 		event.tfinger.touchID = 1;
 		event.tfinger.fingerID = strtoull(finger.c_str(), nullptr, 10);
 		event.tfinger.x = strtof(x.c_str(), nullptr);
 		event.tfinger.y = strtof(y.c_str(), nullptr);
 		event.tfinger.windowID = g_pWindow ? SDL_GetWindowID(g_pWindow) : 0;
-		return SDL_PushEvent(&event) ? JsonOk() : JsonError(SDL_GetError());
+		if (!SDL_PushEvent(&event))
+			return JsonError(SDL_GetError());
+		if (mode.empty())
+			return JsonOk();
+
+		// A pushed finger event skips SDL's platform touch-to-mouse
+		// synthesis. Mirror the primary finger for ImGui UI tests.
+		const float px = event.tfinger.x * w;
+		const float py = event.tfinger.y * h;
+		const SDL_WindowID windowID = event.tfinger.windowID;
+		SDL_Event motion {};
+		motion.type = SDL_EVENT_MOUSE_MOTION;
+		motion.motion.windowID = windowID;
+		motion.motion.which = SDL_TOUCH_MOUSEID;
+		motion.motion.x = px;
+		motion.motion.y = py;
+		if (!SDL_PushEvent(&motion))
+			return JsonError(SDL_GetError());
+		if (action == "move")
+			return JsonOk();
+
+		SDL_Event button {};
+		button.type = action == "down" ? SDL_EVENT_MOUSE_BUTTON_DOWN
+			: SDL_EVENT_MOUSE_BUTTON_UP;
+		button.button.windowID = windowID;
+		button.button.which = SDL_TOUCH_MOUSEID;
+		button.button.button = SDL_BUTTON_LEFT;
+		button.button.down = action == "down";
+		button.button.clicks = 1;
+		button.button.x = px;
+		button.button.y = py;
+		return SDL_PushEvent(&button) ? JsonOk() : JsonError(SDL_GetError());
 	}
 	if (verb == "virtual_controller") {
 		const std::string action = NextToken(cmd);
@@ -3680,7 +3717,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"input_maps\","
 			"\"input_map_add_binding <map index> <controller index> <source code> <target code>\","
 			"\"physical_key <down|up> <SDL scancode name>\","
-			"\"physical_touch <down|move|up|cancel> <finger> <x> <y>\","
+			"\"physical_touch <down|move|up|cancel> <finger> <x> <y> [ui]\","
 			"\"app_lifecycle <background|foreground>\","
 			"\"suspend_state <save|restore|clear|path>\","
 			"\"physical_focus <lost|gained>\","

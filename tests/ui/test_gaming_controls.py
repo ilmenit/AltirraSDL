@@ -1,4 +1,5 @@
 """Exercise Gaming Mode layout and real SDL navigation and touch events."""
+import json
 import struct
 import time
 
@@ -20,6 +21,17 @@ def emu(request, monkeypatch, tmp_path):
     config = tmp_path / "config"
     profile = config / "altirra"
     profile.mkdir(parents=True)
+    first_game = games / "Test Game 00.xex"
+    (profile / "gamelibrary.json").write_text(json.dumps({
+        "version": 3,
+        "games": [{
+            "displayName": "Test Game 00",
+            "variants": [{"path": str(first_game), "type": "xex",
+                          "fileSize": first_game.stat().st_size}],
+            "meta": {"status": "useredited", "title": "Test Game 00",
+                     "description": "Bring the cargo back to the station. " * 60},
+        }],
+    }))
     idle_pref = ('"AutoHideTouchOverlay" = 0\n'
                  if getattr(request, "param", None) is False else "")
     (profile / "settings.ini").write_text(
@@ -73,10 +85,10 @@ def test_details_split_full_safe_area(emu, width, height):
     library = pane(emu, "##Library_")
     game_list = pane(emu, "##GameList_")
     details = pane(emu, "##gamePreview_")
-    text = pane(emu, "##previewText_")
-    assert library and game_list and details and text
+    body = pane(emu, "##previewBody_")
+    assert library and game_list and details and body
     assert pane(emu, "##StatusOverlay") is None
-    assert text["h"] >= 60
+    assert body["h"] >= 60
     assert library["y"] + library["h"] - game_list["y"] >= 48
     play = emu.find_item("##gamePreview_", "Play##preview")
     assert play and play["w"] >= details["w"] * 0.40
@@ -88,6 +100,76 @@ def test_details_split_full_safe_area(emu, width, height):
         assert library["x"] == details["x"]
         assert abs(details["h"] - browser["h"] // 2) <= 14
         assert details["w"] >= browser["w"] - 22
+
+
+def test_short_landscape_library_overflow(emu):
+    emu.send("set_window_size 480 260")
+    wait_for(emu, lambda: emu.find_item("##Library_", "More##libraryActions"))
+    game_list = pane(emu, "##GameList_")
+    tile = emu.find_item("##GameList", "##tile_0")
+    assert tile["y"] + tile["h"] <= game_list["y"] + game_list["h"]
+    assert not emu.find_item("##Library_", "Boot Game")
+    assert not emu.find_item("##Library_", "Settings##chrome")
+
+    # Controller Back belongs to the popup and keeps the browser open.
+    controller = emu.send("virtual_controller attach gamepad")["index"]
+    emu.click("##Library_", "More##libraryActions")
+    wait_for(emu, lambda: emu.find_item("##Popup_", "Boot Game"))
+    emu.send(f"virtual_controller button {controller} 1 1")
+    emu.wait_frames(3)
+    emu.send(f"virtual_controller button {controller} 1 0")
+    wait_for(emu, lambda: not emu.find_item("##Popup_", "Boot Game"))
+    assert pane(emu, "##GameBrowser")
+    emu.send(f"virtual_controller detach {controller}")
+
+    emu.click("##Library_", "More##libraryActions")
+    wait_for(emu, lambda: emu.find_item("##Popup_", "Boot Game"))
+    emu.click("##Popup_", "Boot Game")
+    wait_for(emu, lambda: pane(emu, "##FileBrowser"))
+
+
+def test_library_preview_scrolls_art_and_synopsis_together(emu):
+    width, height = 480, 260
+    emu.send(f"set_window_size {width} {height}")
+    wait_for(emu, lambda: (body := pane(emu, "##previewBody_")) and body["h"] < 200)
+    body = pane(emu, "##previewBody_")
+    art = emu.find_item("##previewBody_", "##artnext")
+    play = emu.find_item("##gamePreview_", "Play##preview")
+    assert art and play
+
+    # Start the drag in the artwork, above the switch and the synopsis.
+    x = (body["x"] + body["w"] / 2) / width
+    y = (art["y"] - 8) / height
+    emu.send(f"physical_touch down 1 {x} {y} ui")
+    emu.wait_frames(3)
+    emu.send(f"physical_touch move 1 {x} {(body['y'] + 4) / height} ui")
+    emu.wait_frames(3)
+    moved_art = emu.find_item("##previewBody_", "##artnext")
+    assert moved_art and moved_art["y"] < art["y"] - 25
+    emu.send(f"physical_touch up 1 {x} {(body['y'] + 4) / height} ui")
+    emu.wait_frames(3)
+    assert emu.find_item("##gamePreview_", "Play##preview")["y"] == play["y"]
+
+
+def test_right_stick_scrolls_full_details_with_play_focused(emu):
+    emu.send("set_window_size 640 360")
+    wait_for(emu, lambda: emu.find_item("##gamePreview_", "Details##preview"))
+    controller = emu.send("virtual_controller attach gamepad")["index"]
+    emu.click("##gamePreview_", "Details##preview")
+    wait_for(emu, lambda: emu.find_item("##detailsBody_", "##artnext"))
+    play = emu.find_item("##GameDetails", "Play")
+    wait_for(emu, lambda: mobile(emu)["navFocusId"] == play["id"])
+    art = emu.find_item("##detailsBody_", "##artnext")
+
+    emu.send(f"virtual_controller axis {controller} 3 32767")
+    emu.wait_frames(10)
+    emu.send(f"virtual_controller axis {controller} 3 0")
+    emu.wait_frames(3)
+    moved_art = emu.find_item("##detailsBody_", "##artnext")
+    assert moved_art is None or moved_art["y"] < art["y"]
+    assert mobile(emu)["navFocusId"] == play["id"]
+    assert emu.find_item("##GameDetails", "Play")["y"] == play["y"]
+    emu.send(f"virtual_controller detach {controller}")
 
 
 def test_controller_sticks_match_navigation_and_scrolling(emu):

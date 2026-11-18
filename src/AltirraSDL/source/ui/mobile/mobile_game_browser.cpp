@@ -1654,6 +1654,14 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			? dockCapable : ATGamePreviewDock::None;
 		const bool split = s_previewDock != ATGamePreviewDock::None;
 		const bool side = s_previewDock == ATGamePreviewDock::Side;
+		const bool compactLandscape = !s_pickerMode
+			&& avail.x >= avail.y && avail.y < dp(420.0f);
+		const ImGuiID actionsPopup = ImGui::GetID("##libraryActions");
+		static int lastActionsFrame = -2;
+		const int frame = ImGui::GetFrameCount();
+		// ImGui can dismiss a popup on Back before rendering this frame.
+		const bool actionsOwnInput = ImGui::IsPopupOpen(actionsPopup, 0)
+			|| lastActionsFrame == frame - 1;
 		const ImVec2 previewSize(
 			side ? (avail.x - panelGap) * 0.5f : avail.x,
 			split && !side ? (avail.y - panelGap) * 0.5f : avail.y);
@@ -1677,7 +1685,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// we must not also process it here, otherwise a single ESC
 		// press would close the modal AND pop the browser.
 		bool backPressed = false;
-		if (!s_confirmActive && !s_infoModalOpen && !s_letterPickerOpen) {
+		if (!actionsOwnInput && !s_confirmActive && !s_infoModalOpen
+			&& !s_letterPickerOpen)
+		{
 			backPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
 			if (!ImGui::IsAnyItemActive()) {
 				backPressed = backPressed
@@ -1713,22 +1723,54 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		// ── Row 1: Hardware info + top-right app chrome ──────────
-		// Settings (and Exit Gaming Mode on desktop) are app-level
-		// actions, not part of the "pick and boot a game" flow, so they
-		// sit right-aligned on the info row rather than competing with
-		// Boot Game / Boot Empty on Row 2.  This also frees Row 2 to
-		// fit comfortably in portrait orientation without clipping.
-		//
-		// Picker mode swaps this row out for a banner + Cancel button —
-		// the user is explicitly picking a game for an external flow
-		// (e.g. netplay "Pick from Library"), so Settings / Exit Gaming
-		// Mode / Boot actions don't apply.
 		const ATMobilePalette &palBrowser = ATMobileGetPalette();
 		const auto &libSettings = s_gameLibrary->GetSettings();
 		const bool compactHeader = split
 			&& ImGui::GetContentRegionAvail().x < dp(420.0f);
 		const float btnH = dp(compactHeader ? 38.0f : 48.0f);
+		const bool isGrid = libSettings.mViewMode == 1;
+		const bool panelOn = libSettings.mbShowDetailsPanel;
+
+		auto openSettings = [&] {
+			s_settingsPage = ATMobileSettingsPage::Home;
+			s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
+			mobileState.currentScreen = ATMobileUIScreen::Settings;
+		};
+#ifndef __ANDROID__
+		auto exitGamingMode = [&] {
+			ATUISetMode(ATUIMode::Desktop);
+			ATUISaveMode();
+			float cs = SDL_GetDisplayContentScale(
+				SDL_GetDisplayForWindow(window));
+			ATUIApplyModeStyle(std::clamp(cs, 1.0f, 4.0f));
+		};
+#endif
+		auto bootGame = [&] {
+			s_romFolderMode = false;
+			mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
+			s_fileBrowserNeedsRefresh = true;
+		};
+		auto bootEmpty = [&] {
+			mobileState.gameLoaded = true;
+			mobileState.currentScreen = ATMobileUIScreen::None;
+			sim.ColdReset();
+			sim.Resume();
+		};
+		auto setViewMode = [&](int mode) {
+			GameLibrarySettings settings = libSettings;
+			settings.mViewMode = mode;
+			s_gameLibrary->SetSettings(settings);
+			s_gameLibrary->SaveSettingsToRegistry();
+		};
+		auto toggleDetails = [&] {
+			GameLibrarySettings settings = libSettings;
+			settings.mbShowDetailsPanel = !panelOn;
+			s_gameLibrary->SetSettings(settings);
+			s_gameLibrary->SaveSettingsToRegistry();
+			ATRegistryFlushToDisk();
+		};
+
+		// The picker has its own header and never offers boot actions.
 
 		if (s_pickerMode) {
 			// Banner + Cancel — analogous to the Settings / Exit chrome
@@ -1754,7 +1796,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			{
 				CancelPicker();
 			}
-		} else {
+		} else if (!compactLandscape) {
 			VDStringA hwInfo = BuildHardwareInfoStr(sim);
 			int gameCount = (int)s_allGamesIndices.size();
 
@@ -1778,28 +1820,16 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			ImGui::TextColored(ATMobileCol(palBrowser.textMuted), "%s", info);
 			SameLineIfFits(chromeW, dp(8.0f));
 			ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - chromeW);
-			if (ATTouchButton("Settings##chrome",
-				ImVec2(settingsW, chromeH)))
-			{
-				s_settingsPage = ATMobileSettingsPage::Home;
-				s_settingsReturnScreen = ATMobileUIScreen::GameBrowser;
-				mobileState.currentScreen = ATMobileUIScreen::Settings;
-			}
+			if (ATTouchButton("Settings##chrome", ImVec2(settingsW, chromeH)))
+				openSettings();
 #ifndef __ANDROID__
 			ImGui::SameLine(0, dp(6.0f));
-			if (ATTouchButton("Exit Gaming Mode##chrome",
-				ImVec2(exitW, chromeH)))
-			{
-				ATUISetMode(ATUIMode::Desktop);
-				ATUISaveMode();
-				float cs = SDL_GetDisplayContentScale(
-					SDL_GetDisplayForWindow(window));
-				if (cs < 1.0f) cs = 1.0f;
-				if (cs > 4.0f) cs = 4.0f;
-				ATUIApplyModeStyle(cs);
-			}
+			if (ATTouchButton("Exit Gaming Mode##chrome", ImVec2(exitW, chromeH)))
+				exitGamingMode();
 #endif
+		}
 
+		if (!s_pickerMode) {
 			if (s_gameLibrary->IsScanning()) {
 				int found = s_gameLibrary->GetScanProgress();
 				VDStringA status = s_gameLibrary->GetScanStatus();
@@ -1846,14 +1876,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		// ── Row 2: Launch actions ────────────────────────────────
-		// Only the two hero actions live here now.  Grid/List, the
-		// letter filter, and search moved to Row 3 so this row stays
-		// comfortable in portrait orientation; Settings / Exit Gaming
-		// Mode moved to the Row 1 chrome.  Hidden in picker mode —
-		// tapping a tile hands off to the picker callback instead of
-		// booting.
-		if (!s_pickerMode) {
+		// Short landscape layouts put launch and app actions behind More.
+		if (!s_pickerMode && !compactLandscape) {
 			const float gap = ImGui::GetStyle().ItemSpacing.x;
 #ifdef ALTIRRA_NETPLAY_ENABLED
 			constexpr int kLaunchButtons = 3;
@@ -1867,9 +1891,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			if (ATTouchButton("Boot Game", ImVec2(btnW, btnH),
 				ATTouchButtonStyle::Accent, ICON_MD_PLAY_ARROW))
 			{
-				s_romFolderMode = false;
-				mobileState.currentScreen = ATMobileUIScreen::FileBrowser;
-				s_fileBrowserNeedsRefresh = true;
+				bootGame();
 			}
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
@@ -1888,41 +1910,22 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				: ImGui::CalcTextSize("Boot Empty").x + dp(56.0f), gap);
 			if (ATTouchButton("Boot Empty", ImVec2(btnW, btnH),
 				ATTouchButtonStyle::Neutral, ICON_MD_POWER_SETTINGS_NEW)) {
-				mobileState.gameLoaded = true;
-				mobileState.currentScreen = ATMobileUIScreen::None;
-				sim.ColdReset();
-				sim.Resume();
+				bootEmpty();
 			}
 		}
 
-		// ── Row 3: View & Filter ─────────────────────────────────
-		// `Grid | List | Letter pill | Search` — one compact toolbar
-		// that stays on a single line in both portrait and landscape.
-		// The letter pill opens a full-screen grid picker (defined
-		// below) instead of the cramped inline row / combo that the
-		// previous revisions used; tiles are finger-sized and the grid
-		// only shows letters that actually have games.
+		// Keep the filters one tap away while browsing.
 		static bool s_focusLetterBar = false;
 		bool letterBarHasFocus = false;
 		{
-			// Grid / List segmented toggle (kept identical to before so
-			// muscle memory carries over).  Treated as a single logical
-			// unit — both halves always share a row.
-			{
-				bool isGrid = libSettings.mViewMode == 1;
-				float viewW = dp(56.0f);
-				float viewH = dp(36.0f);
-				auto setMode = [&](int mode) {
-					GameLibrarySettings settings = libSettings;
-					settings.mViewMode = mode;
-					s_gameLibrary->SetSettings(settings);
-					s_gameLibrary->SaveSettingsToRegistry();
-				};
+			if (!compactLandscape) {
+				const float viewW = dp(56.0f);
+				const float viewH = dp(36.0f);
 				if (ATTouchButton("Grid##view", ImVec2(viewW, viewH),
 					isGrid ? ATTouchButtonStyle::Accent
 					       : ATTouchButtonStyle::Neutral))
 				{
-					if (!isGrid) setMode(1);
+					if (!isGrid) setViewMode(1);
 				}
 				if (ImGui::IsItemFocused())
 					letterBarHasFocus = true;
@@ -1931,7 +1934,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					!isGrid ? ATTouchButtonStyle::Accent
 					        : ATTouchButtonStyle::Neutral))
 				{
-					if (isGrid) setMode(0);
+					if (isGrid) setViewMode(0);
 				}
 				if (ImGui::IsItemFocused())
 					letterBarHasFocus = true;
@@ -1951,7 +1954,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			// not at the top of Row 3.
 			{
 				const float pillW = ImGui::CalcTextSize("Letter: All").x + dp(32.0f);
-				SameLineIfFits(pillW, dp(8.0f));
+				if (!compactLandscape)
+					SameLineIfFits(pillW, dp(8.0f));
 				char pillLabel[32];
 				if (s_letterFilterIdx < 0)
 					snprintf(pillLabel, sizeof(pillLabel),
@@ -1997,9 +2001,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			// small to dock a panel, where it could only ever be a
 			// no-op — those screens reach the same information through
 			// the full-screen sheet instead.
-			if (dockCapable != ATGamePreviewDock::None && !s_pickerMode) {
-				const bool panelOn =
-					s_gameLibrary->GetSettings().mbShowDetailsPanel;
+			if (!compactLandscape && !s_pickerMode
+				&& dockCapable != ATGamePreviewDock::None)
+			{
 				const float infoW = ImGui::CalcTextSize("Details").x
 					+ dp(28.0f);
 				SameLineIfFits(infoW, dp(8.0f));
@@ -2008,11 +2012,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					panelOn ? ATTouchButtonStyle::Accent
 					        : ATTouchButtonStyle::Neutral))
 				{
-					GameLibrarySettings st = s_gameLibrary->GetSettings();
-					st.mbShowDetailsPanel = !panelOn;
-					s_gameLibrary->SetSettings(st);
-					s_gameLibrary->SaveSettingsToRegistry();
-					ATRegistryFlushToDisk();
+					toggleDetails();
 				}
 				// Row 3 sits in the parent window, directly above the
 				// non-flattened game list.  Every widget here that can
@@ -2022,20 +2022,23 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					letterBarHasFocus = true;
 			}
 
-			// Search button / bar.  Behaviour is unchanged from the
-			// previous implementation; only the geometry is tightened
-			// so it fits on the same row as the other Row 3 controls.
+			// Leave room for More alongside the active search field.
 			static bool s_focusSearchInput = false;
-			SameLineIfFits(s_searchActive ? dp(80.0f)
-				: ImGui::CalcTextSize("Search").x + dp(32.0f), dp(8.0f));
-			float searchBtnSz = dp(36.0f);
+			const float gap = dp(8.0f);
+			const float moreW = ImGui::CalcTextSize("More").x + dp(22.0f);
+			const float searchMin = dp(compactLandscape ? 64.0f : 80.0f);
+			SameLineIfFits(s_searchActive ? searchMin
+				: ImGui::CalcTextSize("Search").x + dp(32.0f), gap);
+			const float searchBtnSz = dp(36.0f);
 			if (s_searchActive) {
 				if (s_focusSearchInput) {
 					ImGui::SetKeyboardFocusHere(0);
 					s_focusSearchInput = false;
 				}
 				float searchW = ImGui::GetContentRegionAvail().x;
-				if (searchW < dp(80.0f)) searchW = dp(80.0f);
+				if (compactLandscape && searchW >= searchMin + gap + moreW)
+					searchW -= gap + moreW;
+				searchW = std::max(searchW, searchMin);
 				ImGui::SetNextItemWidth(searchW);
 				if (ImGui::InputText("##search", s_searchBuf,
 					sizeof(s_searchBuf),
@@ -2049,7 +2052,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				if (ImGui::IsItemFocused() || ImGui::IsItemActive())
 					letterBarHasFocus = true;
 
-				if (!s_confirmActive && !s_infoModalOpen
+				if (!actionsOwnInput && !s_confirmActive && !s_infoModalOpen
 					&& ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
 					s_searchBuf[0] = '\0';
 					s_searchFilter.clear();
@@ -2074,7 +2077,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				if (ImGui::IsItemFocused())
 					letterBarHasFocus = true;
 
-				if (!s_variantPickerOpen && !s_letterPickerOpen
+				if (!actionsOwnInput && !s_variantPickerOpen && !s_letterPickerOpen
 					&& !ImGui::IsAnyItemActive())
 				{
 					if (ImGui::IsKeyPressed(ImGuiKey_F, false)
@@ -2109,6 +2112,69 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 						}
 					}
 				}
+			}
+
+			if (compactLandscape) {
+				SameLineIfFits(moreW, gap);
+				if (ATTouchButton("More##libraryActions",
+					ImVec2(moreW, searchBtnSz)))
+					ImGui::OpenPopup(actionsPopup);
+				if (ImGui::IsItemFocused())
+					letterBarHasFocus = true;
+			}
+		}
+
+		// Use the browser's popup ID even when the library is in a child.
+		// A resize can move the toolbar into or out of that child.
+		if (ImGui::IsPopupOpen(actionsPopup, 0)) {
+			const float popupW = std::min(dp(240.0f), avail.x);
+			ImGui::SetNextWindowSizeConstraints(ImVec2(popupW, 0),
+				ImVec2(popupW, std::max(dp(60.0f), avail.y - dp(48.0f))));
+			const ImGuiWindowFlags popupFlags = ImGuiWindowFlags_AlwaysAutoResize
+				| ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
+			if (ImGui::BeginPopupEx(actionsPopup, popupFlags))
+			{
+				lastActionsFrame = frame;
+				if (compactLandscape
+					&& !ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
+				{
+					ATTouchDragScroll();
+					auto item = [](const char *label) {
+						if (!ATTouchButton(label, ImVec2(-1, dp(36.0f)),
+							ATTouchButtonStyle::Subtle))
+							return false;
+						ImGui::CloseCurrentPopup();
+						return true;
+					};
+
+					if (item("Boot Game"))
+						bootGame();
+#ifdef ALTIRRA_NETPLAY_ENABLED
+					if (item("Online Play"))
+						ATNetplayUI_OpenMyHostedGames();
+#endif
+					if (item("Boot Empty"))
+						bootEmpty();
+					if (item("Settings"))
+						openSettings();
+					if (item(isGrid ? "Switch to List" : "Switch to Grid"))
+						setViewMode(isGrid ? 0 : 1);
+					if (dockCapable != ATGamePreviewDock::None
+						&& item(panelOn ? "Hide Details" : "Show Details")) {
+						toggleDetails();
+						s_focusLetterBar = true;
+					}
+#ifndef __ANDROID__
+					if (item("Exit Gaming Mode"))
+						exitGamingMode();
+#endif
+					ImGui::Separator();
+					ATTouchMutedText(BuildHardwareInfoStr(sim).c_str());
+					ATTouchEndDragScroll();
+				} else {
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::EndPopup();
 			}
 		}
 
@@ -2178,7 +2244,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			VDStringA whyNotNudge;
 			// Leave room for the list on short handhelds. Metadata is
 			// still available from Settings and the details pane.
-			const int missingMeta = (ImGui::GetContentRegionAvail().y >= dp(230.0f)
+			const int missingMeta = (!compactLandscape
+				&& ImGui::GetContentRegionAvail().y >= dp(230.0f)
 				&& !mds.mbFirstRunNudgeShown
 				&& !s_gameLibrary->IsScanning()
 				&& !ATMetadataGetScraper().IsRunning()
@@ -2250,7 +2317,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// nav scoring (child→parent).
 		static bool s_focusGameList = false;
 		if (letterBarHasFocus
-			&& !s_variantPickerOpen
+			&& !actionsOwnInput && !s_variantPickerOpen
 			&& NavDownPressed() && ImGui::NavMoveRequestButNoResultYet())
 		{
 			s_focusGameList = true;
@@ -2476,7 +2543,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// unbound elsewhere in this screen, and "shoulder buttons flip
 		// the view" is the console idiom.
 		if (s_previewDock != ATGamePreviewDock::None
-			&& !s_variantPickerOpen && !s_letterPickerOpen
+			&& !actionsOwnInput && !s_variantPickerOpen && !s_letterPickerOpen
 			&& !s_confirmActive && !s_infoModalOpen)
 		{
 			if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
@@ -2492,7 +2559,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// without navigating into the sheet to press a button there.  It
 		// is a retry affordance more than a primary action — with
 		// automatic fetching on, most games never need it.
-		if (!s_variantPickerOpen && !s_letterPickerOpen
+		if (!actionsOwnInput && !s_variantPickerOpen && !s_letterPickerOpen
 			&& !s_confirmActive && !s_infoModalOpen && !s_searchActive
 			&& s_previewEntry >= 0
 			&& (size_t)s_previewEntry < s_gameLibrary->GetEntries().size())

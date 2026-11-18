@@ -28,7 +28,9 @@
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 
+#include <cmath>
 #include <cstdio>
 
 #include <vd2/system/text.h>
@@ -134,9 +136,26 @@ void RenderGameDetails(ATSimulator &sim, ATUIState &uiState,
 		}
 
 		const float footerH = dp(ATTouch::kFooterReserveDouble);
+		if (s_focusPlay)
+			ImGui::SetNextWindowScroll(ImVec2(0, 0));
 		ImGui::BeginChild("##detailsBody", ImVec2(0, -footerH),
 			ImGuiChildFlags_NavFlattened);
 		ATTouchDragScroll();
+
+		// Keep right-stick scrolling available while Play or another
+		// footer action has focus. ImGui scrolls the focused child itself.
+		if (GImGui->NavWindow == ImGui::GetCurrentWindow()->RootWindow
+			&& ImGui::GetScrollMaxY() > 0.0f)
+		{
+			// The backend maps the physical right stick to ImGui's
+			// proportional scroll inputs in Gaming Mode.
+			const float dy = ImGui::GetKeyData(ImGuiKey_GamepadLStickDown)->AnalogValue
+				- ImGui::GetKeyData(ImGuiKey_GamepadLStickUp)->AnalogValue;
+			if (dy != 0.0f) {
+				const float speed = std::round(ImGui::GetFontSize() * 100.0f * io.DeltaTime);
+				ImGui::SetScrollY(std::trunc(ImGui::GetScrollY() + dy * speed));
+			}
+		}
 
 		const float availW = ImGui::GetContentRegionAvail().x;
 

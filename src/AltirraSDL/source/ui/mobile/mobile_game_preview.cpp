@@ -24,10 +24,8 @@
 //	   Gamepad users get the panel's actions — and everything else — by
 //	   pressing Y, which opens the full-screen details sheet.
 //
-//	2. No launch-blocking chrome.  The panel offers exactly two buttons
-//	   (Play, Details).  Everything rarer lives in the details sheet, so
-//	   the panel stays readable at a glance rather than becoming a
-//	   second toolbar.
+//	2. The panel pins two actions below the scrollable artwork and
+//	   synopsis.  The remaining actions live in the details sheet.
 
 #include <stdafx.h>
 
@@ -54,19 +52,6 @@ extern ATGameLibrary *GetGameLibrary();
 extern GameArtCache *GetGameArtCache();
 
 namespace {
-
-// Below this the bottom dock switches to its compact form: a thumbnail,
-// the title, one fact line and the two actions.  A bottom dock lays art
-// beside text, so on a ~430dp phone the full form would leave a ~70dp
-// synopsis column — unreadable.  Dropping what does not fit beats
-// refusing to show anything, which is what the old 600dp *floor* did.
-const float kCompactBodyW = 560.0f;
-const float kCompactBodyH = 200.0f;
-
-// Ceiling on the bottom dock's artwork as a fraction of the panel width,
-// so the text column always keeps the majority of the row.
-const float kBottomArtWidthFrac        = 0.38f;
-const float kBottomArtWidthFracCompact = 0.30f;
 
 // Fit inside the artwork box while keeping the original aspect ratio.
 ImVec2 FitInside(int w, int h, float maxW, float maxH) {
@@ -163,10 +148,9 @@ void ATMobileDrawArtSwitch(const GameEntry &entry, float width) {
 
 namespace {
 
-// Title + fact lines + synopsis.  Shared by both docks; only the width
-// it is handed differs.
+// Title, fact lines and synopsis.
 void DrawText(const GameEntry &entry, const ATMobilePalette &pal,
-	bool includeSynopsis, bool compact = false)
+	bool compact)
 {
 	const VDStringA title = ATUIMetadataDisplayTitle(entry);
 	ImGui::PushTextWrapPos(0.0f);
@@ -177,10 +161,7 @@ void DrawText(const GameEntry &entry, const ATMobilePalette &pal,
 	if (!facts.empty())
 		ATTouchMutedText(facts.c_str());
 
-	// Compact keeps only the line that identifies the game.  Genre,
-	// variant counts and play counts are the first things to go when
-	// there are three lines of room: they are the least of what someone
-	// glancing at a phone in portrait is after.
+	// Show fewer facts in short panes so the synopsis starts sooner.
 	if (!compact) {
 		const VDStringA genre = ATUIMetadataGenreLine(entry);
 		if (!genre.empty())
@@ -190,9 +171,6 @@ void DrawText(const GameEntry &entry, const ATMobilePalette &pal,
 		if (!copyLine.empty())
 			ATTouchMutedText(copyLine.c_str());
 	}
-
-	if (!includeSynopsis)
-		return;
 
 	ImGui::Spacing();
 
@@ -330,90 +308,31 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 
 	const GameEntry &entry = entries[entryIndex];
 	static int previousEntry = -1;
-	const bool entryChanged = previousEntry != entryIndex;
+	static int previousFrame = -1;
+	const int frame = ImGui::GetFrameCount();
+	const bool resetScroll = previousEntry != entryIndex
+		|| previousFrame != frame - 1;
 	previousEntry = entryIndex;
+	previousFrame = frame;
 	const float footerH = dp(ATTouch::kButtonHeightNormal)
 		+ ImGui::GetStyle().ItemSpacing.y;
 
-	// Short panes keep the image beside the synopsis so neither area
-	// collapses when the artwork switch and actions take a row each.
-	if (ImGui::GetContentRegionAvail().y >= dp(225.0f))
-	{
-		// ── Vertical layout ──────────────────────────────────────
-		// Art on top, text under it, actions pinned to the bottom.
-		const float availW = ImGui::GetContentRegionAvail().x;
-		const float availH = ImGui::GetContentRegionAvail().y;
-		const float spacing = ImGui::GetStyle().ItemSpacing.y;
-		const float lineH = ImGui::GetTextLineHeightWithSpacing();
-		const float switchH = dp(40.0f) + spacing;
-		const bool compact = availH < dp(400.0f);
-		const float minTextH = lineH * (compact ? 4.0f : 6.0f);
-		const float artH = std::max(1.0f, std::min(availH * 0.52f,
-			availH - footerH - switchH - minTextH - spacing * 2.0f));
-
-		DrawArt(lib, entry, availW, artH);
-		ATMobileDrawArtSwitch(entry, availW);
-
-		if (entryChanged)
-			ImGui::SetNextWindowScroll(ImVec2(0, 0));
-		ImGui::BeginChild("##previewText", ImVec2(0, -footerH),
-			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
-		ATTouchDragScroll();
-		DrawText(entry, pal, /*includeSynopsis=*/true, compact);
-		ATTouchEndDragScroll();
-		ImGui::EndChild();
-
-	} else {
-		// ── Horizontal layout ────────────────────────────────────
-		// Use the pane's width for art and text when height is limited.
-		const float availH = ImGui::GetContentRegionAvail().y;
-		const float availW = ImGui::GetContentRegionAvail().x;
-
-		// Compact: a phone held upright.  Secondary fact lines and the art
-		// switch are dropped so that the artwork, title and actions stay
-		// full size and finger-sized.  Keep the synopsis: the text column
-		// is already a scroll view, and omitting it leaves otherwise useful
-		// space blank between the title/facts and the actions.
-		const bool compact = (availW < dp(kCompactBodyW))
-			|| (availH < dp(kCompactBodyH));
-
-		const float artH = availH - footerH;
-		// Slightly wider than tall suits the mix of portrait covers and
-		// landscape screenshots — but never at the text column's expense,
-		// so the aspect-derived width is capped against the panel width.
-		float artW = artH * 1.1f;
-		const float artCap = availW * (compact
-			? kBottomArtWidthFracCompact : kBottomArtWidthFrac);
-		if (artW > artCap)
-			artW = artCap;
-
-		ImGui::BeginGroup();
-		if (compact) {
-			// No room for the switch here; L1/R1 and the full-screen
-			// sheet still reach it.
-			DrawArt(lib, entry, artW, artH);
-		} else {
-			// The switch shares the art column, so the art box gives up
-			// its height rather than overflowing the panel.
-			const float switchH = dp(40.0f) + ImGui::GetStyle().ItemSpacing.y;
-			DrawArt(lib, entry, artW, artH - switchH);
-			ATMobileDrawArtSwitch(entry, artW);
-		}
-		ImGui::EndGroup();
-
-		ImGui::SameLine(0, dp(compact ? 10.0f : 14.0f));
-
-		const float textW = ImGui::GetContentRegionAvail().x;
-		if (entryChanged)
-			ImGui::SetNextWindowScroll(ImVec2(0, 0));
-		ImGui::BeginChild("##previewText", ImVec2(textW, artH),
-			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
-		ATTouchDragScroll();
-		DrawText(entry, pal, /*includeSynopsis=*/true, compact);
-		ATTouchEndDragScroll();
-		ImGui::EndChild();
-
-	}
+	// Give the artwork and synopsis one scrolling surface. A reader can
+	// move the artwork fully out of view while the actions stay available.
+	if (resetScroll)
+		ImGui::SetNextWindowScroll(ImVec2(0, 0));
+	ImGui::BeginChild("##previewBody", ImVec2(0, -footerH),
+		ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
+	ATTouchDragScroll();
+	const ImVec2 body = ImGui::GetContentRegionAvail();
+	const float artH = std::max(1.0f, std::min({
+		body.y * 0.46f, body.x * 0.625f, dp(320.0f)
+	}));
+	DrawArt(lib, entry, body.x, artH);
+	ATMobileDrawArtSwitch(entry, body.x);
+	DrawText(entry, pal, body.y < dp(350.0f));
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
 
 	DrawActions(sim, mobileState, entryIndex, entry,
 		ImGui::GetContentRegionAvail().x);
