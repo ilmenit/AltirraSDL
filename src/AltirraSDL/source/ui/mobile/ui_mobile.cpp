@@ -1196,7 +1196,8 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 			mobileState.touchOverlayIdleSeconds = 0.0f;
 			mobileState.topBarTimer = 0.0f;
 			const bool wakingMenu = mobileState.showHamburgerMenu
-				&& !mobileState.topBarVisible;
+				&& !mobileState.topBarVisible
+				&& mobileState.layout.btnMenu.Contains(ev.button.x, ev.button.y);
 			mobileState.topBarVisible = true;
 			UpdateTouchConsoleKeys(mobileState);
 			if (wakingMenu)
