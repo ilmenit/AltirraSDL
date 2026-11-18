@@ -358,7 +358,11 @@ bool ATTouchControls_GetAutoFire() {
 }
 
 bool ATTouchControls_IsActive() {
-	return s_joyActive || s_fireActive || s_consoleActive;
+	return s_joyActive || s_fireActive || ATTouchControls_IsTopBarActive();
+}
+
+bool ATTouchControls_IsTopBarActive() {
+	return s_consoleActive || s_menuFingerActive || s_menuMouseActive;
 }
 
 // -------------------------------------------------------------------------
@@ -402,7 +406,9 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 	// underlying joystick / fire / hamburger zones — those would trigger
 	// sim input underneath the picker.  Returning false lets ImGui
 	// consume the event normally so the picker's buttons receive taps.
-	if (ATEmotePicker::IsOpen())
+	const bool fingerRelease = ev.type == SDL_EVENT_FINGER_UP
+		|| ev.type == SDL_EVENT_FINGER_CANCELED;
+	if (ATEmotePicker::IsOpen() && !fingerRelease)
 		return false;
 
 	// --- Mouse-click fallback for the hamburger icon ---
@@ -454,7 +460,7 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 	const bool isDPad = (style != ATTouchJoystickStyle::Analog);
 	if (ev.type != SDL_EVENT_FINGER_DOWN &&
 		ev.type != SDL_EVENT_FINGER_MOTION &&
-		ev.type != SDL_EVENT_FINGER_UP)
+		!fingerRelease)
 		return false;
 
 	// Convert normalized touch coords to pixels
@@ -656,7 +662,7 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 		return false;
 	}
 
-	if (ev.type == SDL_EVENT_FINGER_UP) {
+	if (fingerRelease) {
 		// --- JOYSTICK RELEASE ---
 		if (s_joyActive && fid == s_joyFinger) {
 			s_joyDirMask = 0;
@@ -684,7 +690,8 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 		// hamburger rect (slop-cancel: drag-off behaves like a touch
 		// cancel, just like every other button on the platform).
 		if (s_menuFingerActive && fid == s_menuFinger) {
-			if (layout.btnMenu.Contains(px, py))
+			if (ev.type == SDL_EVENT_FINGER_UP && !ATEmotePicker::IsOpen()
+				&& layout.btnMenu.Contains(px, py))
 				s_menuTapped = true;
 			s_menuFingerActive = false;
 			s_menuFinger = 0;

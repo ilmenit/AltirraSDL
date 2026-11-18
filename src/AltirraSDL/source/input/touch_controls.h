@@ -43,6 +43,7 @@ void ATTouchControls_Render(const ATTouchLayout &layout, const ATTouchLayoutConf
 
 // Returns true if any touch control is currently active (finger down)
 bool ATTouchControls_IsActive();
+bool ATTouchControls_IsTopBarActive();
 
 // Enable/disable haptic feedback pulses on button taps and direction
 // changes.  When on, every actionable touch triggers an Android

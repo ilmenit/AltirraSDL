@@ -49,6 +49,8 @@ struct ATMobileUIState {
 	float topBarTimer = 0.0f;
 	bool topBarVisible = true;
 	bool topBarEnabled = true;
+	float touchOverlayIdleSeconds = 0.0f;
+	bool autoHideTouchOverlay = true;
 
 	// --- Auto save-state ---
 	// Three independent toggles that together describe how the
@@ -130,6 +132,15 @@ struct ATMobileUIState {
 	// the platform).
 	bool fullScreenImmersive = false;
 };
+
+struct ATMobileTouchOverlayVisibility {
+	bool gameplay = false;
+	bool console = false;
+	bool menu = false;
+};
+
+ATMobileTouchOverlayVisibility ATMobileUI_GetTouchOverlayVisibility(
+	const ATUIState &uiState, const ATMobileUIState &mobileState);
 
 // Initialize mobile UI (call once at startup, after ImGui init)
 void ATMobileUI_Init();

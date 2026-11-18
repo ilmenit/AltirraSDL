@@ -4,6 +4,7 @@
 #include <stdafx.h>
 #include <ctime>
 #include <algorithm>
+#include <cmath>
 #include <SDL3/SDL.h>
 #ifndef ALTIRRA_NO_SDL3_IMAGE
 #include <SDL3_image/SDL_image.h>
@@ -78,16 +79,21 @@ static int SearchInputCallback(ImGuiInputTextCallbackData *data) {
 	return 0;
 }
 
+// Wrap a toolbar item when the landscape details pane narrows the browser.
+static void SameLineIfFits(float width, float gap) {
+	const float right = ImGui::GetWindowPos().x + ImGui::GetContentRegionMax().x;
+	if (ImGui::GetItemRectMax().x + gap + width <= right)
+		ImGui::SameLine(0, gap);
+}
+
 static bool NavDownPressed() {
 	return ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)
-		|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false)
-		|| ImGui::IsKeyPressed(ImGuiKey_GamepadLStickDown, false);
+		|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false);
 }
 
 static bool NavUpPressed() {
 	return ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)
-		|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false)
-		|| ImGui::IsKeyPressed(ImGuiKey_GamepadLStickUp, false);
+		|| ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false);
 }
 
 // Indices into the library's entries, filtered and sorted for display
@@ -1397,14 +1403,13 @@ static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
 }
 
 static void RenderGameRow(ATSimulator &sim, ATMobileUIState &mobileState,
-	size_t entryIndex, bool showTime)
+	size_t entryIndex, float rowH, bool showTime)
 {
 	auto &entries = s_gameLibrary->GetEntries();
 	if (entryIndex >= entries.size())
 		return;
 
 	const auto &entry = entries[entryIndex];
-	float rowH = dp(52.0f);
 	float indicatorW = dp(6.0f);
 	float pad = dp(8.0f);
 
@@ -1622,23 +1627,22 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 	if (ImGui::Begin("##GameBrowser", nullptr, flags)) {
 
-		// ── Preview panel placement ──────────────────────────────
-		// Computed from the whole browser rectangle, not from whatever
-		// space is left after the header rows, so it stays stable as
-		// transient rows (scan progress, download banner, first-run
-		// nudge) come and go.  `dockCapable` is "could this screen carry
-		// a panel at all" and drives whether the toggle is even offered;
-		// s_previewDock adds the user's preference on top.
-		//
-		// Picker mode opts out: the panel's Play button boots a game,
-		// which is precisely what a picker must not do.
-		const float browserW = io.DisplaySize.x - insetL - insetR;
-		const float browserH = io.DisplaySize.y - insetT - insetB;
+		const ImVec2 avail = ImGui::GetContentRegionAvail();
+		const float panelGap = dp(10.0f);
 		const ATGamePreviewDock dockCapable =
-			GamePreview_ComputeDock(browserW, browserH, true);
-		s_previewDock =
-			(s_gameLibrary->GetSettings().mbShowDetailsPanel && !s_pickerMode)
-				? dockCapable : ATGamePreviewDock::None;
+			GamePreview_ComputeDock(avail.x, avail.y);
+		s_previewDock = s_gameLibrary->GetSettings().mbShowDetailsPanel
+			&& !s_pickerMode && !s_gameLibrary->GetEntries().empty()
+			? dockCapable : ATGamePreviewDock::None;
+		const bool split = s_previewDock != ATGamePreviewDock::None;
+		const bool side = s_previewDock == ATGamePreviewDock::Side;
+		const ImVec2 previewSize(
+			side ? (avail.x - panelGap) * 0.5f : avail.x,
+			split && !side ? (avail.y - panelGap) * 0.5f : avail.y);
+		if (split) {
+			ImGui::BeginChild("##Library", previewSize,
+				ImGuiChildFlags_NavFlattened);
+		}
 
 		// ── Gamepad / keyboard back navigation ───────────────────
 		// ESC / B / Backspace: context-dependent.
@@ -1704,7 +1708,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// Mode / Boot actions don't apply.
 		const ATMobilePalette &palBrowser = ATMobileGetPalette();
 		const auto &libSettings = s_gameLibrary->GetSettings();
-		const float btnH = dp(48.0f);
+		const bool compactHeader = split
+			&& ImGui::GetContentRegionAvail().x < dp(420.0f);
+		const float btnH = dp(compactHeader ? 38.0f : 48.0f);
 
 		if (s_pickerMode) {
 			// Banner + Cancel — analogous to the Settings / Exit chrome
@@ -1747,17 +1753,13 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			float chromeW = settingsW;
 #endif
 
-			float rowY = ImGui::GetCursorPosY();
-			ImGui::TextColored(ATMobileCol(palBrowser.textMuted),
-				"ALTIRRA  %s  (%d game%s)",
+			char info[160];
+			snprintf(info, sizeof info, "ALTIRRA  %s  (%d game%s)",
 				hwInfo.c_str(), gameCount, gameCount == 1 ? "" : "s");
 
-			// Right-align chrome on the same line as the info text.
-			// GetContentRegionMax() is window-relative (same coordinate
-			// space as SetCursorPos), which is what we need here.
-			float rightX = ImGui::GetContentRegionMax().x - chromeW;
-			ImGui::SameLine(0, 0);
-			ImGui::SetCursorPos(ImVec2(rightX, rowY));
+			ImGui::TextColored(ATMobileCol(palBrowser.textMuted), "%s", info);
+			SameLineIfFits(chromeW, dp(8.0f));
+			ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - chromeW);
 			if (ATTouchButton("Settings##chrome",
 				ImVec2(settingsW, chromeH)))
 			{
@@ -1834,10 +1836,17 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		// tapping a tile hands off to the picker callback instead of
 		// booting.
 		if (!s_pickerMode) {
-			// Boot Game is the hero action — accent gradient.  Every
-			// other button uses the neutral card-gradient style so the
-			// bar reads as a cohesive surface with one stand-out.
-			if (ATTouchButton("Boot Game", ImVec2(0, btnH),
+			const float gap = ImGui::GetStyle().ItemSpacing.x;
+#ifdef ALTIRRA_NETPLAY_ENABLED
+			constexpr int kLaunchButtons = 3;
+#else
+			constexpr int kLaunchButtons = 2;
+#endif
+			const float btnW = compactHeader
+				? std::floor((ImGui::GetContentRegionAvail().x
+					- gap * (kLaunchButtons - 1)) / kLaunchButtons)
+				: 0.0f;
+			if (ATTouchButton("Boot Game", ImVec2(btnW, btnH),
 				ATTouchButtonStyle::Accent, ICON_MD_PLAY_ARROW))
 			{
 				s_romFolderMode = false;
@@ -1846,8 +1855,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 
 #ifdef ALTIRRA_NETPLAY_ENABLED
-			ImGui::SameLine();
-			if (ATTouchButton("Online Play", ImVec2(0, btnH),
+			SameLineIfFits(btnW > 0 ? btnW
+				: ImGui::CalcTextSize("Online Play").x + dp(56.0f), gap);
+			if (ATTouchButton("Online Play", ImVec2(btnW, btnH),
 				ATTouchButtonStyle::Neutral, ICON_MD_PUBLIC)) {
 				// Go to My Hosted Games first — that's the primary
 				// entry point for the offer-list UX.  The browser is
@@ -1856,8 +1866,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 #endif
 
-			ImGui::SameLine();
-			if (ATTouchButton("Boot Empty", ImVec2(0, btnH),
+			SameLineIfFits(btnW > 0 ? btnW
+				: ImGui::CalcTextSize("Boot Empty").x + dp(56.0f), gap);
+			if (ATTouchButton("Boot Empty", ImVec2(btnW, btnH),
 				ATTouchButtonStyle::Neutral, ICON_MD_POWER_SETTINGS_NEW)) {
 				mobileState.gameLoaded = true;
 				mobileState.currentScreen = ATMobileUIScreen::None;
@@ -1920,8 +1931,9 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			// "came from" in both cases, so SetKeyboardFocusHere(0)
 			// must fire immediately before ATTouchButton for the pill,
 			// not at the top of Row 3.
-			ImGui::SameLine(0, dp(8.0f));
 			{
+				const float pillW = ImGui::CalcTextSize("Letter: All").x + dp(32.0f);
+				SameLineIfFits(pillW, dp(8.0f));
 				char pillLabel[32];
 				if (s_letterFilterIdx < 0)
 					snprintf(pillLabel, sizeof(pillLabel),
@@ -1951,8 +1963,6 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				// pixels when the user switches between "All" (long)
 				// and "A" (short).
 				float pillH = dp(36.0f);
-				float pillW = ImGui::CalcTextSize("Letter: All").x
-					+ dp(32.0f);
 				ATTouchButtonStyle pillStyle = (s_letterFilterIdx >= 0)
 					? ATTouchButtonStyle::Accent
 					: ATTouchButtonStyle::Neutral;
@@ -1969,12 +1979,12 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			// small to dock a panel, where it could only ever be a
 			// no-op — those screens reach the same information through
 			// the full-screen sheet instead.
-			if (dockCapable != ATGamePreviewDock::None) {
-				ImGui::SameLine(0, dp(8.0f));
+			if (dockCapable != ATGamePreviewDock::None && !s_pickerMode) {
 				const bool panelOn =
 					s_gameLibrary->GetSettings().mbShowDetailsPanel;
 				const float infoW = ImGui::CalcTextSize("Details").x
 					+ dp(28.0f);
+				SameLineIfFits(infoW, dp(8.0f));
 				if (ATTouchButton("Details##infopill",
 					ImVec2(infoW, dp(36.0f)),
 					panelOn ? ATTouchButtonStyle::Accent
@@ -1985,8 +1995,6 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					s_gameLibrary->SetSettings(st);
 					s_gameLibrary->SaveSettingsToRegistry();
 					ATRegistryFlushToDisk();
-					s_previewDock = st.mbShowDetailsPanel
-						? dockCapable : ATGamePreviewDock::None;
 				}
 				// Row 3 sits in the parent window, directly above the
 				// non-flattened game list.  Every widget here that can
@@ -2000,7 +2008,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			// previous implementation; only the geometry is tightened
 			// so it fits on the same row as the other Row 3 controls.
 			static bool s_focusSearchInput = false;
-			ImGui::SameLine(0, dp(8.0f));
+			SameLineIfFits(s_searchActive ? dp(80.0f)
+				: ImGui::CalcTextSize("Search").x + dp(32.0f), dp(8.0f));
 			float searchBtnSz = dp(36.0f);
 			if (s_searchActive) {
 				if (s_focusSearchInput) {
@@ -2092,8 +2101,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			&& s_gameLibrary->GetEntries().empty()
 			&& !s_gameLibrary->IsScanning())
 		{
-			float windowW = io.DisplaySize.x - insetL - insetR;
-			float windowH = io.DisplaySize.y - insetT - insetB;
+			float windowW = ImGui::GetWindowWidth();
+			float windowH = ImGui::GetWindowHeight();
 			float centerX = windowW * 0.5f;
 			float centerY = windowH * 0.4f;
 
@@ -2135,6 +2144,8 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				g_sim.Resume();
 			}
 
+			if (split)
+				ImGui::EndChild();
 			ImGui::End();
 			return;
 		}
@@ -2147,7 +2158,10 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		{
 			ATMetadataSettings &mds = ATMetadataGetSettings();
 			VDStringA whyNotNudge;
-			const int missingMeta = (!mds.mbFirstRunNudgeShown
+			// Leave room for the list on short handhelds. Metadata is
+			// still available from Settings and the details pane.
+			const int missingMeta = (ImGui::GetContentRegionAvail().y >= dp(230.0f)
+				&& !mds.mbFirstRunNudgeShown
 				&& !s_gameLibrary->IsScanning()
 				&& !ATMetadataGetScraper().IsRunning()
 				&& ATUIMetadataIsUsable(whyNotNudge))
@@ -2219,48 +2233,17 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		static bool s_focusGameList = false;
 		if (letterBarHasFocus
 			&& !s_variantPickerOpen
-			&& NavDownPressed())
+			&& NavDownPressed() && ImGui::NavMoveRequestButNoResultYet())
 		{
 			s_focusGameList = true;
 		}
 
-		// Reserve the panel's slice of the body before the list claims
-		// the rest.  If the header rows have eaten so much that a panel
-		// would leave no usable grid, drop it for this frame — done
-		// before the first tile is drawn, so the long-press handler and
-		// the tile highlight agree with what is actually on screen.
-		const ImVec2 bodyAvail = ImGui::GetContentRegionAvail();
-		const float panelGap = dp(10.0f);
-		float panelW = 0.0f;
-		float panelH = 0.0f;
-
-		if (s_previewDock == ATGamePreviewDock::Side) {
-			panelW = GamePreview_SideWidth(browserW);
-			if (bodyAvail.y < dp(200.0f)
-				|| bodyAvail.x - panelW - panelGap < dp(240.0f))
-			{
-				s_previewDock = ATGamePreviewDock::None;
-				panelW = 0.0f;
-			}
-		} else if (s_previewDock == ATGamePreviewDock::Bottom) {
-			panelH = GamePreview_BottomHeight(browserH);
-			const float maxPanelH = bodyAvail.y * 0.45f;
-			if (panelH > maxPanelH)
-				panelH = maxPanelH;
-			if (bodyAvail.y - panelH - panelGap < dp(200.0f)) {
-				s_previewDock = ATGamePreviewDock::None;
-				panelH = 0.0f;
-			}
-		}
-
-		ImGui::BeginChild("##GameList",
-			ImVec2(panelW > 0.0f ? -(panelW + panelGap) : 0.0f,
-			       panelH > 0.0f ? -(panelH + panelGap) : 0.0f),
-			ImGuiChildFlags_None);
+		const float listH = split
+			? std::max(dp(96.0f), ImGui::GetContentRegionAvail().y) : 0.0f;
+		ImGui::BeginChild("##GameList", ImVec2(0, listH));
 		ATTouchDragScroll();
 
 		if (s_focusGameList) {
-			ImGuiContext &g = *GImGui;
 			ImGui::FocusWindow(ImGui::GetCurrentWindow());
 			ImGui::SetKeyboardFocusHere(0);
 			s_focusGameList = false;
@@ -2376,7 +2359,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 				ImGui::Spacing();
 
 				for (size_t idx : s_lastPlayedIndices)
-					RenderGameRow(sim, mobileState, idx, true);
+					RenderGameRow(sim, mobileState, idx, rowH, true);
 
 				ImGui::PopID();
 				ImGui::Spacing();
@@ -2403,7 +2386,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 						i < clipper.DisplayEnd; ++i)
 					{
 						RenderGameRow(sim, mobileState,
-							s_allGamesIndices[i], false);
+							s_allGamesIndices[i], rowH, false);
 					}
 				}
 			}
@@ -2425,14 +2408,15 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			if (s_checkUpExit) {
 				s_checkUpExit = false;
 				float scrollNow = ImGui::GetScrollY();
-				if (g.NavId == s_navIdOnUp
+				if (g.NavWindow == ImGui::GetCurrentWindow() && g.NavId == s_navIdOnUp
 					&& fabsf(scrollNow - s_scrollOnUp) < 1.0f)
 				{
 					s_focusLetterBar = true;
 				}
 			}
 
-			if (NavUpPressed() && !s_searchActive && !s_variantPickerOpen)
+			if (g.NavWindow == ImGui::GetCurrentWindow() && NavUpPressed()
+				&& !s_searchActive && !s_variantPickerOpen)
 			{
 				s_navIdOnUp = g.NavId;
 				s_scrollOnUp = ImGui::GetScrollY();
@@ -2442,10 +2426,6 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
-
-		// EndChild leaves the list as the last item, so its measured
-		// height is exactly what the side panel needs to match.
-		const float listH = ImGui::GetItemRectSize().y;
 
 		// Shoulder buttons cycle the artwork the library shows.
 		//
@@ -2491,21 +2471,15 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
-		if (s_previewDock == ATGamePreviewDock::Side) {
-			ImGui::SameLine(0, panelGap);
+		if (split) {
+			ImGui::EndChild();
+			if (side)
+				ImGui::SameLine(0, panelGap);
+			else
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + panelGap
+					- ImGui::GetStyle().ItemSpacing.y);
 			GamePreview_Render(sim, mobileState, s_previewEntry,
-				s_previewDock, ImVec2(panelW, listH));
-		} else if (s_previewDock == ATGamePreviewDock::Bottom) {
-			// EndChild already advanced the cursor by ItemSpacing.y; top
-			// it up to the full gap.  Moving the cursor rather than
-			// emitting a Dummy matters — a Dummy is an item and would
-			// bring a second ItemSpacing.y with it, pushing the panel
-			// past the bottom of the reserved space.
-			const float extra = panelGap - ImGui::GetStyle().ItemSpacing.y;
-			if (extra > 0.0f)
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + extra);
-			GamePreview_Render(sim, mobileState, s_previewEntry,
-				s_previewDock, ImVec2(0, panelH));
+				s_previewDock, previewSize);
 		}
 	}
 	ImGui::End();

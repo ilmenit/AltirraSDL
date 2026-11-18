@@ -490,7 +490,16 @@ static std::string BuildStateJson(ATSimulator &sim, ATUIState &state) {
 	json += ATIsAppSuspendedSDL3() ? "true" : "false";
 	json += ",\"mobile\":{\"gameLoaded\":";
 	json += g_mobileState.gameLoaded ? "true" : "false";
-	json += ",\"currentScreen\":" + std::to_string((int)g_mobileState.currentScreen) + "},";
+	json += ",\"currentScreen\":" + std::to_string((int)g_mobileState.currentScreen);
+	json += ",\"navFocusId\":" + std::to_string(ImGui::GetCurrentContext()->NavId);
+	const auto touch = ATMobileUI_GetTouchOverlayVisibility(state, g_mobileState);
+	json += ",\"touchOverlay\":{\"gameplay\":";
+	json += touch.gameplay ? "true" : "false";
+	json += ",\"console\":";
+	json += touch.console ? "true" : "false";
+	json += ",\"menu\":";
+	json += touch.menu ? "true" : "false";
+	json += "}},";
 
 	// Dialog flags
 	json += "\"dialogs\":{";
@@ -2568,6 +2577,26 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 		event.key.down = down;
 		return SDL_PushEvent(&event) ? JsonOk() : JsonError(SDL_GetError());
 	}
+	if (verb == "physical_touch") {
+		const std::string action = NextToken(cmd);
+		const std::string finger = NextToken(cmd);
+		const std::string x = NextToken(cmd);
+		const std::string y = NextToken(cmd);
+		SDL_Event event {};
+		if (action == "down") event.type = SDL_EVENT_FINGER_DOWN;
+		else if (action == "move") event.type = SDL_EVENT_FINGER_MOTION;
+		else if (action == "up") event.type = SDL_EVENT_FINGER_UP;
+		else if (action == "cancel") event.type = SDL_EVENT_FINGER_CANCELED;
+		if (!event.type || finger.empty() || x.empty() || y.empty())
+			return JsonError("usage: physical_touch <down|move|up|cancel> <finger> <x> <y>");
+
+		event.tfinger.touchID = 1;
+		event.tfinger.fingerID = strtoull(finger.c_str(), nullptr, 10);
+		event.tfinger.x = strtof(x.c_str(), nullptr);
+		event.tfinger.y = strtof(y.c_str(), nullptr);
+		event.tfinger.windowID = g_pWindow ? SDL_GetWindowID(g_pWindow) : 0;
+		return SDL_PushEvent(&event) ? JsonOk() : JsonError(SDL_GetError());
+	}
 	if (verb == "virtual_controller") {
 		const std::string action = NextToken(cmd);
 		if (action == "attach") {
@@ -3651,6 +3680,7 @@ static std::string DispatchCommand(std::string cmd, ATSimulator &sim, ATUIState 
 			"\"input_maps\","
 			"\"input_map_add_binding <map index> <controller index> <source code> <target code>\","
 			"\"physical_key <down|up> <SDL scancode name>\","
+			"\"physical_touch <down|move|up|cancel> <finger> <x> <y>\","
 			"\"app_lifecycle <background|foreground>\","
 			"\"suspend_state <save|restore|clear|path>\","
 			"\"physical_focus <lost|gained>\","

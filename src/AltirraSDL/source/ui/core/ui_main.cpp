@@ -2684,6 +2684,10 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	} else {
 		ImGui_ImplSDLRenderer3_NewFrame();
 	}
+	extern void ATImGuiSetGamepadNavigation(bool enabled);
+	extern ATMobileUIState g_mobileState;
+	ATImGuiSetGamepadNavigation(ATUIIsGamingMode()
+		&& g_mobileState.currentScreen != ATMobileUIScreen::None);
 	ImGui_ImplSDL3_NewFrame();
 	ImGui::NewFrame();
 
@@ -2712,7 +2716,6 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	SDL_Window *window = backend->GetWindow();
 
 	if (ATUIIsGamingMode()) {
-		extern ATMobileUIState g_mobileState;
 		ATMobileUI_Render(sim, state, g_mobileState, window);
 	} else {
 		ATUIRenderMainMenu(sim, window, backend, state);

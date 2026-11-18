@@ -34,6 +34,7 @@
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdio>
 
 #include <vd2/system/text.h>
@@ -54,17 +55,6 @@ extern GameArtCache *GetGameArtCache();
 
 namespace {
 
-// Below these the panel would take more room than it gives back.  The
-// side threshold is set so the grid keeps at least ~440dp — three
-// comfortable tile columns — after the panel is subtracted.
-const float kMinBodyWForSide   = 760.0f;
-
-// A bottom dock needs enough height that taking a slice off it still
-// leaves a grid worth scrolling.  620dp covers every phone held upright;
-// below that (a landscape phone that failed the side test, a tiny
-// window) there is nothing useful to dock.
-const float kMinBodyHForBottom = 620.0f;
-
 // Below this the bottom dock switches to its compact form: a thumbnail,
 // the title, one fact line and the two actions.  A bottom dock lays art
 // beside text, so on a ~430dp phone the full form would leave a ~70dp
@@ -78,7 +68,7 @@ const float kCompactBodyH = 200.0f;
 const float kBottomArtWidthFrac        = 0.38f;
 const float kBottomArtWidthFracCompact = 0.30f;
 
-// Scale down (never up) to fit inside maxW x maxH.
+// Fit inside the artwork box while keeping the original aspect ratio.
 ImVec2 FitInside(int w, int h, float maxW, float maxH) {
 	if (w <= 0 || h <= 0)
 		return ImVec2(0, 0);
@@ -86,8 +76,6 @@ ImVec2 FitInside(int w, int h, float maxW, float maxH) {
 	const float scaleH = maxH / (float)h;
 	if (scaleH < scale)
 		scale = scaleH;
-	if (scale > 1.0f)
-		scale = 1.0f;
 	return ImVec2((float)w * scale, (float)h * scale);
 }
 
@@ -290,49 +278,14 @@ void DrawActions(ATSimulator &sim, ATMobileUIState &mobileState,
 
 }  // namespace
 
-ATGamePreviewDock GamePreview_ComputeDock(float bodyW, float bodyH,
-	bool enabled)
-{
-	if (!enabled)
-		return ATGamePreviewDock::None;
-
-	// Wider than tall and wide enough to spare: dock to the side.  This
-	// is the landscape case on every device from a handheld to a
-	// desktop window.
-	if (bodyW >= dp(kMinBodyWForSide) && bodyW >= bodyH)
+ATGamePreviewDock GamePreview_ComputeDock(float width, float height) {
+	if (width >= height && width >= dp(440.0f) && height >= dp(180.0f))
 		return ATGamePreviewDock::Side;
 
-	// Taller than wide and tall enough to spare: dock underneath.  This
-	// is the portrait case the user asked about — a phone or tablet held
-	// upright gets the panel across the bottom of the screen, in the
-	// compact form when it is narrow.
-	if (bodyH >= dp(kMinBodyHForBottom) && bodyH > bodyW)
+	if (height > width && height >= dp(460.0f))
 		return ATGamePreviewDock::Bottom;
 
-	// Too small for either: the full-screen details sheet is the answer.
 	return ATGamePreviewDock::None;
-}
-
-float GamePreview_SideWidth(float bodyW) {
-	float w = bodyW * 0.30f;
-	const float lo = dp(280.0f);
-	const float hi = dp(400.0f);
-	if (w < lo) w = lo;
-	if (w > hi) w = hi;
-	return w;
-}
-
-float GamePreview_BottomHeight(float bodyH) {
-	// A quarter of the body, bounded.  The floor is set by what the
-	// compact layout actually needs — a thumbnail, two lines and a
-	// 48dp action row — and the ceiling stops a very tall screen from
-	// handing the panel more room than the grid.
-	float h = bodyH * 0.26f;
-	const float lo = dp(172.0f);
-	const float hi = dp(300.0f);
-	if (h < lo) h = lo;
-	if (h > hi) h = hi;
-	return h;
 }
 
 void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
@@ -376,28 +329,37 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 	}
 
 	const GameEntry &entry = entries[entryIndex];
+	static int previousEntry = -1;
+	const bool entryChanged = previousEntry != entryIndex;
+	previousEntry = entryIndex;
 	const float footerH = dp(ATTouch::kButtonHeightNormal)
 		+ ImGui::GetStyle().ItemSpacing.y;
 
-	if (dock == ATGamePreviewDock::Side) {
+	// Short panes keep the image beside the synopsis so neither area
+	// collapses when the artwork switch and actions take a row each.
+	if (ImGui::GetContentRegionAvail().y >= dp(225.0f))
+	{
 		// ── Vertical layout ──────────────────────────────────────
 		// Art on top, text under it, actions pinned to the bottom.
 		const float availW = ImGui::GetContentRegionAvail().x;
 		const float availH = ImGui::GetContentRegionAvail().y;
-		float artH = availH * 0.42f;
-		if (artH > dp(260.0f))
-			artH = dp(260.0f);
+		const float spacing = ImGui::GetStyle().ItemSpacing.y;
+		const float lineH = ImGui::GetTextLineHeightWithSpacing();
+		const float switchH = dp(40.0f) + spacing;
+		const bool compact = availH < dp(400.0f);
+		const float minTextH = lineH * (compact ? 4.0f : 6.0f);
+		const float artH = std::max(1.0f, std::min(availH * 0.52f,
+			availH - footerH - switchH - minTextH - spacing * 2.0f));
 
 		DrawArt(lib, entry, availW, artH);
 		ATMobileDrawArtSwitch(entry, availW);
-		ImGui::Spacing();
 
-		// The synopsis scrolls; everything else is fixed, so the actions
-		// never get pushed off the bottom by a long description.
+		if (entryChanged)
+			ImGui::SetNextWindowScroll(ImVec2(0, 0));
 		ImGui::BeginChild("##previewText", ImVec2(0, -footerH),
 			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
 		ATTouchDragScroll();
-		DrawText(entry, pal, /*includeSynopsis=*/true);
+		DrawText(entry, pal, /*includeSynopsis=*/true, compact);
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
@@ -406,9 +368,7 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 
 	} else {
 		// ── Horizontal layout ────────────────────────────────────
-		// A bottom dock is wide and short, so the art goes beside the
-		// text rather than above it — stacking here would leave the
-		// synopsis two lines tall with empty space on both sides.
+		// Use the pane's width for art and text when height is limited.
 		const float availH = ImGui::GetContentRegionAvail().y;
 		const float availW = ImGui::GetContentRegionAvail().x;
 
@@ -448,6 +408,8 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 
 		ImGui::BeginGroup();
 		const float textW = ImGui::GetContentRegionAvail().x;
+		if (entryChanged)
+			ImGui::SetNextWindowScroll(ImVec2(0, 0));
 		ImGui::BeginChild("##previewText", ImVec2(textW, -footerH),
 			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
 		ATTouchDragScroll();
