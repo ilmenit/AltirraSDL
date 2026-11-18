@@ -122,6 +122,25 @@ def test_short_landscape_library_overflow(emu):
     assert pane(emu, "##GameBrowser")
     emu.send(f"virtual_controller detach {controller}")
 
+    # A swipe can reach display options without also activating a row.
+    emu.click("##Library_", "More##libraryActions")
+    wait_for(emu, lambda: emu.find_item("##Popup_", "Settings"))
+    settings = emu.find_item("##Popup_", "Settings")
+    x = (settings["x"] + settings["w"] / 2) / 480
+    start_y = (settings["y"] + settings["h"] / 2) / 260
+    for action, y in (("down", start_y), ("move", .18), ("up", .18)):
+        emu.send(f"physical_touch {action} 1 {x} {y} ui")
+        emu.wait_frames(4)
+    assert pane(emu, "##GameBrowser")
+    assert emu.find_item("##Popup_", "Hide Details")
+
+    # A rotated layout should discard the open popup and restore navigation.
+    emu.send("set_window_size 360 780")
+    wait_for(emu, lambda: not emu.find_item("##Popup_", "Hide Details")
+             and emu.find_item("##Library_", "Details##infopill"))
+    emu.send("set_window_size 480 260")
+    wait_for(emu, lambda: emu.find_item("##Library_", "More##libraryActions"))
+
     emu.click("##Library_", "More##libraryActions")
     wait_for(emu, lambda: emu.find_item("##Popup_", "Boot Game"))
     emu.click("##Popup_", "Boot Game")
@@ -152,7 +171,7 @@ def test_library_preview_scrolls_art_and_synopsis_together(emu):
 
 
 def test_right_stick_scrolls_full_details_with_play_focused(emu):
-    emu.send("set_window_size 640 360")
+    emu.send("set_window_size 480 260")
     wait_for(emu, lambda: emu.find_item("##gamePreview_", "Details##preview"))
     controller = emu.send("virtual_controller attach gamepad")["index"]
     emu.click("##gamePreview_", "Details##preview")
@@ -160,6 +179,8 @@ def test_right_stick_scrolls_full_details_with_play_focused(emu):
     play = emu.find_item("##GameDetails", "Play")
     wait_for(emu, lambda: mobile(emu)["navFocusId"] == play["id"])
     art = emu.find_item("##detailsBody_", "##artnext")
+    body = pane(emu, "##detailsBody_")
+    assert body["h"] >= 100
 
     emu.send(f"virtual_controller axis {controller} 3 32767")
     emu.wait_frames(10)
@@ -169,6 +190,15 @@ def test_right_stick_scrolls_full_details_with_play_focused(emu):
     assert moved_art is None or moved_art["y"] < art["y"]
     assert mobile(emu)["navFocusId"] == play["id"]
     assert emu.find_item("##GameDetails", "Play")["y"] == play["y"]
+
+    emu.send(f"virtual_controller axis {controller} 3 32767")
+    emu.wait_frames(60)
+    emu.send(f"virtual_controller axis {controller} 3 0")
+    emu.wait_frames(3)
+    remove = emu.find_item("##detailsBody_", "Remove from library")
+    assert remove and body["y"] <= remove["y"]
+    assert remove["y"] + remove["h"] <= body["y"] + body["h"]
+    assert mobile(emu)["navFocusId"] == play["id"]
     emu.send(f"virtual_controller detach {controller}")
 
 
