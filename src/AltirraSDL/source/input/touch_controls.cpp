@@ -397,6 +397,18 @@ static uint8 ComputeDirectionMask4(float dx, float dy, float deadZone) {
 		return (dy < 0.0f) ? 0x04 : 0x08;
 }
 
+static bool IsFireZone(const ATTouchLayout &layout, float px, float py) {
+	return layout.btnFireA.Contains(px, py)
+		|| (FireBEnabled() && layout.btnFireB.Contains(px, py))
+		|| layout.fireZone.Contains(px / layout.screenW, py / layout.screenH);
+}
+
+bool ATTouchControls_IsGameplayZone(const ATTouchLayout &layout, float x, float y) {
+	return layout.screenW > 0 && layout.screenH > 0
+		&& (layout.joystickZone.Contains(x, y)
+			|| IsFireZone(layout, x * layout.screenW, y * layout.screenH));
+}
+
 bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layout,
 	const ATTouchLayoutConfig &config,
 	bool showControls, bool showMenu)
@@ -458,6 +470,8 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 
 	const ATTouchJoystickStyle style = config.joystickStyle;
 	const bool isDPad = (style != ATTouchJoystickStyle::Analog);
+	if (layout.screenW <= 0 || layout.screenH <= 0)
+		return false;
 	if (ev.type != SDL_EVENT_FINGER_DOWN &&
 		ev.type != SDL_EVENT_FINGER_MOTION &&
 		!fingerRelease)
@@ -470,7 +484,6 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 
 	// Build pixel-space zone rects for hit testing
 	ATTouchRect joyZonePx = ATTouchLayout_ToPixels(layout.joystickZone, layout.screenW, layout.screenH);
-	ATTouchRect fireZonePx = ATTouchLayout_ToPixels(layout.fireZone, layout.screenW, layout.screenH);
 	ATTouchRect topBarPx = ATTouchLayout_ToPixels(layout.topBar, layout.screenW, layout.screenH);
 
 	if (ev.type == SDL_EVENT_FINGER_DOWN) {
@@ -573,15 +586,12 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 		}
 
 		// --- FIRE BUTTON ZONE (right side) ---
-		if (fireZonePx.Contains(px, py) && !s_fireActive) {
+		if (IsFireZone(layout, px, py) && !s_fireActive) {
 			s_fireFinger = fid;
 			s_fireActive = true;
 
 			const bool fireBEnabled = FireBEnabled();
 
-			if (layout.btnFireA.Contains(px, py)) {
-				s_fireAHeld = true;
-			}
 			if (fireBEnabled && layout.btnFireB.Contains(px, py)) {
 				s_fireBHeld = true;
 				if (s_pInputManager)
@@ -589,9 +599,7 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 			}
 			// If finger lands between buttons (or Fire B is disabled),
 			// default to Fire A for the whole zone.
-			if (!s_fireAHeld && !s_fireBHeld) {
-				s_fireAHeld = true;
-			}
+			s_fireAHeld = !s_fireBHeld;
 			UpdateEffectiveJoystick();
 			HapticPulse(15);
 			return true;
@@ -638,8 +646,8 @@ bool ATTouchControls_HandleEvent(const SDL_Event &ev, const ATTouchLayout &layou
 		// Fire finger motion — allow sliding between fire A and fire B
 		if (s_fireActive && fid == s_fireFinger) {
 			const bool fireBEnabled = FireBEnabled();
-			bool nowA = layout.btnFireA.Contains(px, py);
 			bool nowB = fireBEnabled && layout.btnFireB.Contains(px, py);
+			bool nowA = !nowB && IsFireZone(layout, px, py);
 
 			if (nowA && !s_fireAHeld) {
 				s_fireAHeld = true;

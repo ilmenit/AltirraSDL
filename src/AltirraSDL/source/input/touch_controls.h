@@ -34,6 +34,9 @@ void ATTouchControls_ReleaseAll();
 // independently of whether the controls are currently being rendered.
 void ATTouchControls_Tick();
 
+// True if a touch at normalized coordinates can start joystick or fire input.
+bool ATTouchControls_IsGameplayZone(const ATTouchLayout &layout, float x, float y);
+
 // Render touch controls as ImGui overlay.  showControls toggles the
 // joystick / fire / console-key layer; showMenu toggles the hamburger
 // icon.  The two are independent so a user watching a demo can leave

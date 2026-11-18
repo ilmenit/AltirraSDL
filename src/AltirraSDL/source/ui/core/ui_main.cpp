@@ -2684,11 +2684,10 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	} else {
 		ImGui_ImplSDLRenderer3_NewFrame();
 	}
-	extern void ATImGuiSetGamepadNavigation(bool enabled);
+	extern void ATImGuiSDL3NewFrame(bool enabled);
 	extern ATMobileUIState g_mobileState;
-	ATImGuiSetGamepadNavigation(ATUIIsGamingMode()
+	ATImGuiSDL3NewFrame(ATUIIsGamingMode()
 		&& g_mobileState.currentScreen != ATMobileUIScreen::None);
-	ImGui_ImplSDL3_NewFrame();
 	ImGui::NewFrame();
 
 	// Drain background game-library scan results once per frame so
@@ -2720,7 +2719,10 @@ void ATUIRenderFrame(ATSimulator &sim, VDVideoDisplaySDL3 &display,
 	} else {
 		ATUIRenderMainMenu(sim, window, backend, state);
 	}
-	RenderStatusOverlay(sim);
+	if (!ATUIIsGamingMode()
+		|| (g_mobileState.currentScreen != ATMobileUIScreen::GameBrowser
+			&& g_mobileState.currentScreen != ATMobileUIScreen::GameDetails))
+		RenderStatusOverlay(sim);
 	if (!ATUIIsGamingMode())
 		RenderDesktopQuickBar(state);
 

@@ -1,5 +1,7 @@
 // Adapt the SDL backend's controller polling for Gaming Mode navigation.
 #include <SDL3/SDL_gamepad.h>
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
 #include <cstdlib>
 
 namespace {
@@ -42,8 +44,16 @@ namespace {
 	}
 }
 
-void ATImGuiSetGamepadNavigation(bool enabled) {
+void ATImGuiSDL3NewFrame(bool enabled) {
 	s_useGamingNavigation = enabled;
+	ImGuiIO &io = ImGui::GetIO();
+	const bool hadGamepad = (io.BackendFlags & ImGuiBackendFlags_HasGamepad) != 0;
+	ImGui_ImplSDL3_NewFrame();
+	if (hadGamepad && !(io.BackendFlags & ImGuiBackendFlags_HasGamepad)) {
+		// The SDL backend stops polling immediately on disconnect.
+		for (int key = ImGuiKey_GamepadStart; key <= ImGuiKey_GamepadRStickDown; ++key)
+			io.AddKeyEvent((ImGuiKey)key, false);
+	}
 }
 
 // Scope the remap to ImGui so gameplay, binding capture and the virtual

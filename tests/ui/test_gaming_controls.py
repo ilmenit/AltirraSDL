@@ -64,6 +64,7 @@ def pane(emu, name):
 @pytest.mark.parametrize("width,height", [(1280, 720), (640, 360), (480, 854)])
 def test_details_split_full_safe_area(emu, width, height):
     emu.send(f"set_window_size {width} {height}")
+    emu.pause()
     wait_for(emu, lambda: (browser := pane(emu, "##GameBrowser"))
              and (browser["w"], browser["h"]) == (width, height)
              and pane(emu, "##gamePreview_"))
@@ -73,6 +74,7 @@ def test_details_split_full_safe_area(emu, width, height):
     details = pane(emu, "##gamePreview_")
     text = pane(emu, "##previewText_")
     assert library and game_list and details and text
+    assert pane(emu, "##StatusOverlay") is None
     assert text["h"] >= 60
     assert library["y"] + library["h"] - game_list["y"] >= 60
     if width > height:
@@ -106,6 +108,12 @@ def test_controller_sticks_match_navigation_and_scrolling(emu):
     input_event("button", 12, 1)
     focus_id = mobile(emu)["navFocusId"]
     assert focus("##tile_0"), [item for item in emu.list_items() if item["id"] == focus_id]
+
+    # A mouse click or a touch on the artwork switch must leave the list
+    # ready for the next controller press.
+    emu.click("##gamePreview_", "##artnext")
+    emu.wait_frames(3)
+    assert focus("##tile_0")
     input_event("axis", 0, 32767)
     assert focus("##tile_1")
     input_event("button", 14, 1)
@@ -124,7 +132,14 @@ def test_controller_sticks_match_navigation_and_scrolling(emu):
     input_event("axis", 3, 15000, frames=6)
     assert mobile(emu)["navFocusId"] == first["id"]
     assert emu.find_item("##GameList", "##game_1")["y"] < first["y"]
-    input_event("axis", 3, -32768, frames=12)
+
+    # Confirm returns to the focused row before it can launch off-screen.
+    input_event("axis", 3, 32767, frames=22)
+    list_top = pane(emu, "##GameList_")["y"]
+    assert emu.find_item("##GameList", "##game_1")["y"] + first["h"] < list_top
+    input_event("button", 0, 1)
+    assert not mobile(emu)["gameLoaded"]
+    assert emu.find_item("##GameList", "##game_1")["y"] >= list_top
     input_event("button", 0, 1)
     wait_for(emu, lambda: emu.send("mem_read 4000")["bytes"] == [1])
     emu.send(f"virtual_controller detach {controller}")
@@ -149,6 +164,12 @@ def test_touch_overlay_reveals_by_zone_and_ignores_hidden_buttons(emu):
     touch("down", 1, .90, .82)
     assert visibility() == gameplay_only
     assert emu.send("mem_read D010")["bytes"] == [0]  # Fire is active on first touch.
+    touch("move", 1, .88, .80)
+    assert emu.send("mem_read D010")["bytes"] == [0]  # Still in the fire zone.
+    touch("move", 1, .50, .68)
+    assert emu.send("mem_read D010")["bytes"] == [1]
+    touch("move", 1, .90, .82)
+    assert emu.send("mem_read D010")["bytes"] == [0]
     touch("cancel", 1, .90, .82)
     assert emu.send("mem_read D010")["bytes"] == [1]
 
@@ -163,6 +184,25 @@ def test_touch_overlay_reveals_by_zone_and_ignores_hidden_buttons(emu):
     touch("down", 4, .97, .047)
     touch("up", 4, .97, .047)
     assert mobile(emu)["currentScreen"] != 0
+
+
+def test_touch_id_reuse_after_rotation(emu):
+    emu.send("mobile_hamburger")
+    emu.send("mobile_screen none")
+    emu.wait_frames(6)
+    emu.send("physical_touch down 1 .90 .82")
+    emu.wait_frames(3)
+    assert emu.send("mem_read D010")["bytes"] == [0]
+
+    emu.send("set_window_size 540 900")
+    emu.wait_frames(6)
+    assert emu.send("mem_read D010")["bytes"] == [1]
+    emu.send("physical_touch down 1 .90 .82")
+    emu.wait_frames(3)
+    assert emu.send("mem_read D010")["bytes"] == [0]
+    emu.send("physical_touch up 1 .90 .82")
+    emu.wait_frames(3)
+    assert emu.send("mem_read D010")["bytes"] == [1]
 
 
 @pytest.mark.parametrize("emu", [False], indirect=True)

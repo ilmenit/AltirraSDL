@@ -1137,12 +1137,21 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 		const auto owned = std::find(s_gameOwnedFingers.begin(),
 			s_gameOwnedFingers.end(), ev.tfinger.fingerID);
 		if (owned != s_gameOwnedFingers.end()) {
-			if (!fingerDown)
+			if (!fingerDown) {
 				ATTouchControls_HandleEvent(ev, mobileState.layout,
 					mobileState.layoutConfig, true, true);
-			if (fingerRelease)
-				s_gameOwnedFingers.erase(owned);
-			return true;
+				if (fingerRelease)
+					s_gameOwnedFingers.erase(owned);
+				return true;
+			}
+
+			// Android may reuse an ID after delivering a new touch without
+			// the previous release (for example, when the canvas resized).
+			SDL_Event cancel = ev;
+			cancel.type = SDL_EVENT_FINGER_CANCELED;
+			ATTouchControls_HandleEvent(cancel, mobileState.layout,
+				mobileState.layoutConfig, true, true);
+			s_gameOwnedFingers.erase(owned);
 		}
 
 		if (!inGame)
@@ -1160,8 +1169,7 @@ bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
 		const float y = ev.tfinger.y;
 		const bool inTopBar = mobileState.layout.topBar.Contains(x, y);
 		const bool inPlayZone = mobileState.showTouchControls && !inTopBar
-			&& (mobileState.layout.joystickZone.Contains(x, y)
-				|| mobileState.layout.fireZone.Contains(x, y));
+			&& ATTouchControls_IsGameplayZone(mobileState.layout, x, y);
 		if (fingerDown && (mobileState.autoHideTouchOverlay ? !inPlayZone : inTopBar)) {
 			const bool wakingTopBar = !mobileState.topBarVisible
 				&& ((mobileState.showTouchControls && mobileState.topBarEnabled)

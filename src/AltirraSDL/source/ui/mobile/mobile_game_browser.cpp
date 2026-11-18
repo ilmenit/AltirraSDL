@@ -836,6 +836,10 @@ void GameBrowser_ShowVariantPickerForBoot(int entryIdx) {
 	ShowVariantPicker((size_t)entryIdx);
 }
 
+// Choose the dock before drawing the tiles so gestures know whether to
+// highlight the docked preview or open the dedicated details screen.
+static ATGamePreviewDock s_previewDock = ATGamePreviewDock::None;
+
 // ── Highlight (preview) selection ─────────────────────────────────
 //
 // The docked preview panel needs a persistent notion of "the game the
@@ -851,20 +855,34 @@ void GameBrowser_ShowVariantPickerForBoot(int entryIdx) {
 // that blanked the instant the pointer left the grid would be useless,
 // and it would flicker on every mouse move between tiles.
 static int s_previewEntry = -1;
+static ImGuiID s_previewItem = 0;
 
-// Recomputed from the window geometry every frame in RenderGameBrowser.
-// The gesture handler reads it to decide whether a long-press should
-// move the panel or open the full-screen sheet, so it must be up to
-// date before any tile is drawn.
-static ATGamePreviewDock s_previewDock = ATGamePreviewDock::None;
+static void SetPreviewFromItem(size_t entryIndex) {
+	s_previewEntry = (int)entryIndex;
+	s_previewItem = ImGui::GetItemID();
+}
+
+static bool IsPreviewHighlighted(size_t entryIndex, bool recentlyPlayed) {
+	if (s_previewDock == ATGamePreviewDock::None)
+		return false;
+
+	const ImGuiContext &g = *GImGui;
+	if (g.NavCursorVisible && g.NavWindow == ImGui::GetCurrentWindow())
+		return ImGui::IsItemFocused();
+
+	return s_previewEntry == (int)entryIndex
+		&& (s_previewItem ? s_previewItem == ImGui::GetItemID() : !recentlyPlayed);
+}
 
 // Call immediately after a tile/row's Selectable.
 static void UpdatePreviewFromItem(size_t entryIndex) {
 	if (s_previewDock == ATGamePreviewDock::None)
 		return;
 
-	if (ImGui::IsItemFocused()) {
-		s_previewEntry = (int)entryIndex;
+	const ImGuiContext &g = *GImGui;
+	if (g.NavCursorVisible && g.NavWindow == ImGui::GetCurrentWindow()) {
+		if (ImGui::IsItemFocused())
+			SetPreviewFromItem(entryIndex);
 		return;
 	}
 
@@ -878,7 +896,7 @@ static void UpdatePreviewFromItem(size_t entryIndex) {
 		&& (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f)
 		&& !ATTouchIsDraggingBeyondSlop())
 	{
-		s_previewEntry = (int)entryIndex;
+		SetPreviewFromItem(entryIndex);
 	}
 }
 
@@ -970,10 +988,10 @@ static void ApplyDetailsGesture(ATMobileUIState &mobileState,
 {
 	switch (gesture) {
 		case DetailsGesture::Highlight:
-			s_previewEntry = (int)entryIndex;
+			SetPreviewFromItem(entryIndex);
 			break;
 		case DetailsGesture::OpenSheet:
-			s_previewEntry = (int)entryIndex;
+			SetPreviewFromItem(entryIndex);
 			OpenGameDetails(mobileState, entryIndex);
 			break;
 		default:
@@ -1233,7 +1251,7 @@ static VDStringA BuildHardwareInfoStr(ATSimulator &sim) {
 }
 
 static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
-	size_t entryIndex, float tileW, float tileH)
+	size_t entryIndex, float tileW, float tileH, bool recentlyPlayed)
 {
 	auto &entries = s_gameLibrary->GetEntries();
 	if (entryIndex >= entries.size())
@@ -1276,8 +1294,7 @@ static void RenderGameTile(ATSimulator &sim, ATMobileUIState &mobileState,
 	ApplyDetailsGesture(mobileState, gesture, entryIndex);
 
 	bool hovered = ImGui::IsItemHovered() || ImGui::IsItemFocused();
-	const bool highlighted = (s_previewDock != ATGamePreviewDock::None)
-		&& (s_previewEntry == (int)entryIndex);
+	const bool highlighted = IsPreviewHighlighted(entryIndex, recentlyPlayed);
 
 	const ATMobilePalette &pal = ATMobileGetPalette();
 	ImVec2 imgTL = cursor;
@@ -1451,8 +1468,7 @@ static void RenderGameRow(ATSimulator &sim, ATMobileUIState &mobileState,
 	// Selection band.  Drawn first so everything below lands on top of
 	// it; a list row has no spare margin for a ring, so it gets a filled
 	// band plus an accent edge instead.
-	if (s_previewDock != ATGamePreviewDock::None
-		&& s_previewEntry == (int)entryIndex)
+	if (IsPreviewHighlighted(entryIndex, showTime))
 	{
 		dl->AddRectFilled(cursor,
 			ImVec2(cursor.x + availW, cursor.y + rowH),
@@ -1589,6 +1605,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 	// other frame just needs the bounds check, because entries can shrink
 	// underneath us when a scan lands.
 	if (rebuiltIndices) {
+		s_previewItem = 0;
 		bool visible = false;
 		for (size_t idx : s_allGamesIndices) {
 			if ((int)idx == s_previewEntry) { visible = true; break; }
@@ -1599,6 +1616,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		}
 	} else if (s_previewEntry >= (int)s_gameLibrary->GetEntries().size()) {
 		s_previewEntry = -1;
+		s_previewItem = 0;
 	}
 
 	ImGuiIO &io = ImGui::GetIO();
@@ -2241,6 +2259,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 		const float listH = split
 			? std::max(dp(96.0f), ImGui::GetContentRegionAvail().y) : 0.0f;
 		ImGui::BeginChild("##GameList", ImVec2(0, listH));
+		ImGuiWindow *listWindow = ImGui::GetCurrentWindow();
 		ATTouchDragScroll();
 
 		if (s_focusGameList) {
@@ -2249,7 +2268,28 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 			s_focusGameList = false;
 		}
 
+		// The right stick scrolls independently of focus. Confirm first
+		// reveals a focused game that has scrolled completely out of view.
+		ImGuiContext &nav = *GImGui;
+		if (nav.NavWindow == listWindow && nav.NavId
+			&& nav.NavActivateId == nav.NavId)
+		{
+			const ImRect focused = ImGui::WindowRectRelToAbs(
+				listWindow, listWindow->NavRectRel[nav.NavLayer]);
+			if (!listWindow->ClipRect.Overlaps(focused)) {
+				ImGui::ScrollToRectEx(listWindow, focused, ImGuiScrollFlags_AlwaysCenterY);
+				nav.NavActivateId = nav.NavActivateDownId = nav.NavActivatePressedId = 0;
+			}
+		}
+
 		bool gridMode = libSettings.mViewMode == 1;
+		static ImGuiID previousList = 0;
+		static bool previousGridMode = false;
+		if (previousList != listWindow->ID || previousGridMode != gridMode) {
+			s_previewItem = 0;
+			previousList = listWindow->ID;
+			previousGridMode = gridMode;
+		}
 
 		if (gridMode) {
 			// ── Grid View ────────────────────────────────────────
@@ -2299,7 +2339,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					if (i > 0 && (i % cols) != 0)
 						ImGui::SameLine(0, tilePad);
 					RenderGameTile(sim, mobileState,
-						s_lastPlayedIndices[i], tileW, tileH);
+						s_lastPlayedIndices[i], tileW, tileH, true);
 				}
 				ImGui::PopID();
 				ImGui::Spacing();
@@ -2335,7 +2375,7 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 							if (col > 0)
 								ImGui::SameLine(0, tilePad);
 							RenderGameTile(sim, mobileState,
-								s_allGamesIndices[idx], tileW, tileH);
+								s_allGamesIndices[idx], tileW, tileH, false);
 						}
 					}
 				}
@@ -2480,6 +2520,13 @@ void RenderGameBrowser(ATSimulator &sim, ATUIState &uiState,
 					- ImGui::GetStyle().ItemSpacing.y);
 			GamePreview_Render(sim, mobileState, s_previewEntry,
 				s_previewDock, previewSize);
+
+			// Clicking the empty area or scrollbar can still focus the
+			// preview window. Restore the list's last navigation target.
+			ImGuiWindow *navWindow = GImGui->NavWindow;
+			if (navWindow && navWindow->RootWindow == listWindow->RootWindow
+				&& (navWindow->Flags & ImGuiWindowFlags_NoNavInputs))
+				ImGui::FocusWindow(listWindow);
 		}
 	}
 	ImGui::End();
