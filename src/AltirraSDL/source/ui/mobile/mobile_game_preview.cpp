@@ -24,16 +24,15 @@
 //	   Gamepad users get the panel's actions — and everything else — by
 //	   pressing Y, which opens the full-screen details sheet.
 //
-//	2. No launch-blocking chrome.  The panel offers exactly two buttons
-//	   (Play, Details).  Everything rarer lives in the details sheet, so
-//	   the panel stays readable at a glance rather than becoming a
-//	   second toolbar.
+//	2. The panel pins two actions below the scrollable artwork and
+//	   synopsis.  The remaining actions live in the details sheet.
 
 #include <stdafx.h>
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdio>
 
 #include <vd2/system/text.h>
@@ -54,31 +53,7 @@ extern GameArtCache *GetGameArtCache();
 
 namespace {
 
-// Below these the panel would take more room than it gives back.  The
-// side threshold is set so the grid keeps at least ~440dp — three
-// comfortable tile columns — after the panel is subtracted.
-const float kMinBodyWForSide   = 760.0f;
-
-// A bottom dock needs enough height that taking a slice off it still
-// leaves a grid worth scrolling.  620dp covers every phone held upright;
-// below that (a landscape phone that failed the side test, a tiny
-// window) there is nothing useful to dock.
-const float kMinBodyHForBottom = 620.0f;
-
-// Below this the bottom dock switches to its compact form: a thumbnail,
-// the title, one fact line and the two actions.  A bottom dock lays art
-// beside text, so on a ~430dp phone the full form would leave a ~70dp
-// synopsis column — unreadable.  Dropping what does not fit beats
-// refusing to show anything, which is what the old 600dp *floor* did.
-const float kCompactBodyW = 560.0f;
-const float kCompactBodyH = 200.0f;
-
-// Ceiling on the bottom dock's artwork as a fraction of the panel width,
-// so the text column always keeps the majority of the row.
-const float kBottomArtWidthFrac        = 0.38f;
-const float kBottomArtWidthFracCompact = 0.30f;
-
-// Scale down (never up) to fit inside maxW x maxH.
+// Fit inside the artwork box while keeping the original aspect ratio.
 ImVec2 FitInside(int w, int h, float maxW, float maxH) {
 	if (w <= 0 || h <= 0)
 		return ImVec2(0, 0);
@@ -86,8 +61,6 @@ ImVec2 FitInside(int w, int h, float maxW, float maxH) {
 	const float scaleH = maxH / (float)h;
 	if (scaleH < scale)
 		scale = scaleH;
-	if (scale > 1.0f)
-		scale = 1.0f;
 	return ImVec2((float)w * scale, (float)h * scale);
 }
 
@@ -175,10 +148,9 @@ void ATMobileDrawArtSwitch(const GameEntry &entry, float width) {
 
 namespace {
 
-// Title + fact lines + synopsis.  Shared by both docks; only the width
-// it is handed differs.
+// Title, fact lines and synopsis.
 void DrawText(const GameEntry &entry, const ATMobilePalette &pal,
-	bool includeSynopsis, bool compact = false)
+	bool compact)
 {
 	const VDStringA title = ATUIMetadataDisplayTitle(entry);
 	ImGui::PushTextWrapPos(0.0f);
@@ -189,10 +161,7 @@ void DrawText(const GameEntry &entry, const ATMobilePalette &pal,
 	if (!facts.empty())
 		ATTouchMutedText(facts.c_str());
 
-	// Compact keeps only the line that identifies the game.  Genre,
-	// variant counts and play counts are the first things to go when
-	// there are three lines of room: they are the least of what someone
-	// glancing at a phone in portrait is after.
+	// Show fewer facts in short panes so the synopsis starts sooner.
 	if (!compact) {
 		const VDStringA genre = ATUIMetadataGenreLine(entry);
 		if (!genre.empty())
@@ -202,9 +171,6 @@ void DrawText(const GameEntry &entry, const ATMobilePalette &pal,
 		if (!copyLine.empty())
 			ATTouchMutedText(copyLine.c_str());
 	}
-
-	if (!includeSynopsis)
-		return;
 
 	ImGui::Spacing();
 
@@ -290,49 +256,14 @@ void DrawActions(ATSimulator &sim, ATMobileUIState &mobileState,
 
 }  // namespace
 
-ATGamePreviewDock GamePreview_ComputeDock(float bodyW, float bodyH,
-	bool enabled)
-{
-	if (!enabled)
-		return ATGamePreviewDock::None;
-
-	// Wider than tall and wide enough to spare: dock to the side.  This
-	// is the landscape case on every device from a handheld to a
-	// desktop window.
-	if (bodyW >= dp(kMinBodyWForSide) && bodyW >= bodyH)
+ATGamePreviewDock GamePreview_ComputeDock(float width, float height) {
+	if (width >= height && width >= dp(440.0f) && height >= dp(180.0f))
 		return ATGamePreviewDock::Side;
 
-	// Taller than wide and tall enough to spare: dock underneath.  This
-	// is the portrait case the user asked about — a phone or tablet held
-	// upright gets the panel across the bottom of the screen, in the
-	// compact form when it is narrow.
-	if (bodyH >= dp(kMinBodyHForBottom) && bodyH > bodyW)
+	if (height > width && height >= dp(460.0f))
 		return ATGamePreviewDock::Bottom;
 
-	// Too small for either: the full-screen details sheet is the answer.
 	return ATGamePreviewDock::None;
-}
-
-float GamePreview_SideWidth(float bodyW) {
-	float w = bodyW * 0.30f;
-	const float lo = dp(280.0f);
-	const float hi = dp(400.0f);
-	if (w < lo) w = lo;
-	if (w > hi) w = hi;
-	return w;
-}
-
-float GamePreview_BottomHeight(float bodyH) {
-	// A quarter of the body, bounded.  The floor is set by what the
-	// compact layout actually needs — a thumbnail, two lines and a
-	// 48dp action row — and the ceiling stops a very tall screen from
-	// handing the panel more room than the grid.
-	float h = bodyH * 0.26f;
-	const float lo = dp(172.0f);
-	const float hi = dp(300.0f);
-	if (h < lo) h = lo;
-	if (h > hi) h = hi;
-	return h;
 }
 
 void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
@@ -376,88 +307,35 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 	}
 
 	const GameEntry &entry = entries[entryIndex];
+	static int previousEntry = -1;
+	static int previousFrame = -1;
+	const int frame = ImGui::GetFrameCount();
+	const bool resetScroll = previousEntry != entryIndex
+		|| previousFrame != frame - 1;
+	previousEntry = entryIndex;
+	previousFrame = frame;
 	const float footerH = dp(ATTouch::kButtonHeightNormal)
 		+ ImGui::GetStyle().ItemSpacing.y;
 
-	if (dock == ATGamePreviewDock::Side) {
-		// ── Vertical layout ──────────────────────────────────────
-		// Art on top, text under it, actions pinned to the bottom.
-		const float availW = ImGui::GetContentRegionAvail().x;
-		const float availH = ImGui::GetContentRegionAvail().y;
-		float artH = availH * 0.42f;
-		if (artH > dp(260.0f))
-			artH = dp(260.0f);
+	// Give the artwork and synopsis one scrolling surface. A reader can
+	// move the artwork fully out of view while the actions stay available.
+	if (resetScroll)
+		ImGui::SetNextWindowScroll(ImVec2(0, 0));
+	ImGui::BeginChild("##previewBody", ImVec2(0, -footerH),
+		ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
+	ATTouchDragScroll();
+	const ImVec2 body = ImGui::GetContentRegionAvail();
+	const float artH = std::max(1.0f, std::min({
+		body.y * 0.46f, body.x * 0.625f, dp(320.0f)
+	}));
+	DrawArt(lib, entry, body.x, artH);
+	ATMobileDrawArtSwitch(entry, body.x);
+	DrawText(entry, pal, body.y < dp(350.0f));
+	ATTouchEndDragScroll();
+	ImGui::EndChild();
 
-		DrawArt(lib, entry, availW, artH);
-		ATMobileDrawArtSwitch(entry, availW);
-		ImGui::Spacing();
-
-		// The synopsis scrolls; everything else is fixed, so the actions
-		// never get pushed off the bottom by a long description.
-		ImGui::BeginChild("##previewText", ImVec2(0, -footerH),
-			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
-		ATTouchDragScroll();
-		DrawText(entry, pal, /*includeSynopsis=*/true);
-		ATTouchEndDragScroll();
-		ImGui::EndChild();
-
-		DrawActions(sim, mobileState, entryIndex, entry,
-			ImGui::GetContentRegionAvail().x);
-
-	} else {
-		// ── Horizontal layout ────────────────────────────────────
-		// A bottom dock is wide and short, so the art goes beside the
-		// text rather than above it — stacking here would leave the
-		// synopsis two lines tall with empty space on both sides.
-		const float availH = ImGui::GetContentRegionAvail().y;
-		const float availW = ImGui::GetContentRegionAvail().x;
-
-		// Compact: a phone held upright.  Secondary fact lines and the art
-		// switch are dropped so that the artwork, title and actions stay
-		// full size and finger-sized.  Keep the synopsis: the text column
-		// is already a scroll view, and omitting it leaves otherwise useful
-		// space blank between the title/facts and the actions.
-		const bool compact = (availW < dp(kCompactBodyW))
-			|| (availH < dp(kCompactBodyH));
-
-		const float artH = availH;
-		// Slightly wider than tall suits the mix of portrait covers and
-		// landscape screenshots — but never at the text column's expense,
-		// so the aspect-derived width is capped against the panel width.
-		float artW = artH * 1.1f;
-		const float artCap = availW * (compact
-			? kBottomArtWidthFracCompact : kBottomArtWidthFrac);
-		if (artW > artCap)
-			artW = artCap;
-
-		ImGui::BeginGroup();
-		if (compact) {
-			// No room for the switch here; L1/R1 and the full-screen
-			// sheet still reach it.
-			DrawArt(lib, entry, artW, artH);
-		} else {
-			// The switch shares the art column, so the art box gives up
-			// its height rather than overflowing the panel.
-			const float switchH = dp(40.0f) + ImGui::GetStyle().ItemSpacing.y;
-			DrawArt(lib, entry, artW, artH - switchH);
-			ATMobileDrawArtSwitch(entry, artW);
-		}
-		ImGui::EndGroup();
-
-		ImGui::SameLine(0, dp(compact ? 10.0f : 14.0f));
-
-		ImGui::BeginGroup();
-		const float textW = ImGui::GetContentRegionAvail().x;
-		ImGui::BeginChild("##previewText", ImVec2(textW, -footerH),
-			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
-		ATTouchDragScroll();
-		DrawText(entry, pal, /*includeSynopsis=*/true, compact);
-		ATTouchEndDragScroll();
-		ImGui::EndChild();
-
-		DrawActions(sim, mobileState, entryIndex, entry, textW);
-		ImGui::EndGroup();
-	}
+	DrawActions(sim, mobileState, entryIndex, entry,
+		ImGui::GetContentRegionAvail().x);
 
 	ImGui::EndChild();
 	ImGui::PopStyleVar(2);

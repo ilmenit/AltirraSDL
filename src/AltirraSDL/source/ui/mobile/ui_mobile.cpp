@@ -50,6 +50,7 @@
 #include "ui_virtual_keyboard.h"
 #include "../app/disk_state.h"
 #include "../gamelibrary/game_library.h"
+#include "ui/emotes/emote_picker.h"
 #include "ui_emuerror.h"
 
 extern ATSimulator g_sim;
@@ -115,6 +116,7 @@ static void LoadMobileConfig(ATMobileUIState &mobileState) {
 	mobileState.showTouchControls = key.getBool("ShowTouchControls", false);
 #endif
 	mobileState.showHamburgerMenu = key.getBool("ShowHamburgerMenu", true);
+	mobileState.autoHideTouchOverlay = key.getBool("AutoHideTouchOverlay", true);
 	mobileState.fullScreenImmersive = key.getBool("FullScreenImmersive", false);
 }
 
@@ -142,6 +144,7 @@ void SaveMobileConfig(const ATMobileUIState &mobileState) {  // shared via mobil
 		key.setInt("InterfaceScale", mobileState.interfaceScale);
 		key.setBool("ShowTouchControls", mobileState.showTouchControls);
 		key.setBool("ShowHamburgerMenu", mobileState.showHamburgerMenu);
+		key.setBool("AutoHideTouchOverlay", mobileState.autoHideTouchOverlay);
 		key.setBool("FullScreenImmersive", mobileState.fullScreenImmersive);
 	}
 	// Persist immediately — registry-only writes are lost if the user
@@ -313,8 +316,11 @@ void ATMobileUI_SetConsoleKeysEnabled(ATMobileUIState &mobileState,
 	bool enabled)
 {
 	mobileState.topBarEnabled = enabled;
-	mobileState.topBarVisible = enabled;
-	mobileState.topBarTimer = 0.0f;
+	if (enabled) {
+		mobileState.topBarVisible = true;
+		mobileState.topBarTimer = 0.0f;
+		mobileState.touchOverlayIdleSeconds = 0.0f;
+	}
 	ATTouchControls_SetConsoleKeysVisible(enabled);
 }
 
@@ -753,7 +759,42 @@ void ATMobileUI_InvalidateFileBrowser() {
 // -------------------------------------------------------------------------
 
 extern bool s_menuTapped;
-static constexpr float kConsoleTopBarAutoHideSeconds = 4.0f;
+static constexpr float kTouchOverlayTimeout = 4.0f;
+
+static bool TouchOverlayAvailable(const ATUIState &uiState) {
+#ifdef ALTIRRA_NETPLAY_ENABLED
+	if (ATNetplayUI_IsActive())
+		return false;
+#endif
+	return !uiState.showVirtualKeyboard && !ATUIIsEmuErrorDialogOpen()
+		&& !s_infoModalOpen && !s_confirmActive
+		&& !ATEmotePicker::IsOpen()
+		&& !ATDisplayRecovery::Active() && !ATDisplayAdvisor::Active();
+}
+
+static bool TouchMenuVisible(const ATMobileUIState &state) {
+	return state.showHamburgerMenu
+		&& (!state.autoHideTouchOverlay || state.topBarVisible);
+}
+
+static void UpdateTouchConsoleKeys(const ATMobileUIState &state) {
+	ATTouchControls_SetConsoleKeysVisible(state.showTouchControls
+		&& state.topBarEnabled && state.topBarVisible);
+}
+
+ATMobileTouchOverlayVisibility ATMobileUI_GetTouchOverlayVisibility(
+	const ATUIState &uiState, const ATMobileUIState &state)
+{
+	if (!state.gameLoaded || state.currentScreen != ATMobileUIScreen::None
+		|| !TouchOverlayAvailable(uiState))
+		return {};
+
+	const bool gameplay = state.showTouchControls
+		&& (!state.autoHideTouchOverlay
+			|| state.touchOverlayIdleSeconds < kTouchOverlayTimeout);
+	return { gameplay, gameplay && state.topBarEnabled && state.topBarVisible,
+		TouchMenuVisible(state) };
+}
 
 static bool ConsumeMenuTap() {
 	if (s_menuTapped) {
@@ -788,6 +829,7 @@ void ATMobileUI_OpenMenu(ATSimulator &sim, ATMobileUIState &mobileState) {
 
 void ATMobileUI_CloseMenu(ATSimulator &sim, ATMobileUIState &mobileState) {
 	mobileState.currentScreen = ATMobileUIScreen::None;
+	mobileState.touchOverlayIdleSeconds = 0.0f;
 	s_menuPauseActive = false;
 	if (!s_wasPausedBeforeMenu)
 		sim.Resume();
@@ -988,33 +1030,28 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 			break;
 		}
 
-		// Render touch controls overlay — but hide them when the virtual
-		// keyboard is visible so they don't overlap the keyboard keys,
-		// when the error dialog is open, or when the user has disabled
-		// them (default on desktop).  The hamburger menu icon has its
-		// own independent toggle so it can stay visible while the
-		// gameplay controls are hidden (e.g. watching a demo with a
-		// gamepad).
-		if (!uiState.showVirtualKeyboard && !ATUIIsEmuErrorDialogOpen()
-			&& (mobileState.showTouchControls || mobileState.showHamburgerMenu))
-		{
-			if (mobileState.topBarEnabled && mobileState.showTouchControls) {
-				if (mobileState.topBarVisible) {
-					if (!ATTouchControls_IsActive())
-						mobileState.topBarTimer += ImGui::GetIO().DeltaTime;
-					else
-						mobileState.topBarTimer = 0.0f;
+		if (TouchOverlayAvailable(uiState)) {
+			const bool held = ATTouchControls_IsActive();
+			const bool holdTopBar = mobileState.autoHideTouchOverlay
+				? ATTouchControls_IsTopBarActive() : held;
+			if (held)
+				mobileState.touchOverlayIdleSeconds = 0.0f;
+			else if (mobileState.touchOverlayIdleSeconds < kTouchOverlayTimeout)
+				mobileState.touchOverlayIdleSeconds += io.DeltaTime;
 
-					if (mobileState.topBarTimer >= kConsoleTopBarAutoHideSeconds)
-						mobileState.topBarVisible = false;
-				}
-				ATTouchControls_SetConsoleKeysVisible(mobileState.topBarVisible);
-			} else {
-				ATTouchControls_SetConsoleKeysVisible(false);
+			if (mobileState.topBarVisible) {
+				if (holdTopBar)
+					mobileState.topBarTimer = 0.0f;
+				else
+					mobileState.topBarTimer += io.DeltaTime;
+				if (mobileState.topBarTimer >= kTouchOverlayTimeout)
+					mobileState.topBarVisible = false;
 			}
 
+			const auto visible = ATMobileUI_GetTouchOverlayVisibility(uiState, mobileState);
+			ATTouchControls_SetConsoleKeysVisible(visible.console);
 			ATTouchControls_Render(mobileState.layout, mobileState.layoutConfig,
-				mobileState.showTouchControls, mobileState.showHamburgerMenu);
+				visible.gameplay, visible.menu);
 		}
 		break;
 
@@ -1075,113 +1112,109 @@ void ATMobileUI_Render(ATSimulator &sim, ATUIState &uiState,
 // FINGER_UP and treats it as a click on whatever item happens to be
 // under the finger — typically the close button or the first menu row.
 namespace {
-	constexpr int kMaxOwnedFingers = 8;
-	SDL_FingerID s_gameOwnedFingers[kMaxOwnedFingers] = {};
-	int s_gameOwnedCount = 0;
-
-	bool IsGameOwnedFinger(SDL_FingerID id) {
-		for (int i = 0; i < s_gameOwnedCount; ++i)
-			if (s_gameOwnedFingers[i] == id) return true;
-		return false;
-	}
-	void AddGameOwnedFinger(SDL_FingerID id) {
-		if (IsGameOwnedFinger(id)) return;
-		if (s_gameOwnedCount < kMaxOwnedFingers)
-			s_gameOwnedFingers[s_gameOwnedCount++] = id;
-	}
-	void RemoveGameOwnedFinger(SDL_FingerID id) {
-		for (int i = 0; i < s_gameOwnedCount; ++i) {
-			if (s_gameOwnedFingers[i] == id) {
-				s_gameOwnedFingers[i] = s_gameOwnedFingers[--s_gameOwnedCount];
-				return;
-			}
-		}
-	}
+	std::vector<SDL_FingerID> s_gameOwnedFingers;
 }
 
 bool ATMobileUI_HandleEvent(const SDL_Event &ev, ATMobileUIState &mobileState) {
-	const bool isFinger =
-		ev.type == SDL_EVENT_FINGER_DOWN ||
-		ev.type == SDL_EVENT_FINGER_MOTION ||
-		ev.type == SDL_EVENT_FINGER_UP;
+	const bool fingerRelease = ev.type == SDL_EVENT_FINGER_UP
+		|| ev.type == SDL_EVENT_FINGER_CANCELED;
+	const bool fingerDown = ev.type == SDL_EVENT_FINGER_DOWN;
+	const bool isFinger = fingerDown || fingerRelease
+		|| ev.type == SDL_EVENT_FINGER_MOTION;
+	const bool inGame = mobileState.currentScreen == ATMobileUIScreen::None
+		&& mobileState.gameLoaded;
+	const bool overlayAvailable = inGame && TouchOverlayAvailable(g_uiState);
 
-	// Continue swallowing any in-flight finger that originated on the
-	// game-side touch layer, regardless of which screen is now active.
-	if (isFinger && IsGameOwnedFinger(ev.tfinger.fingerID)) {
-		// Forward to touch_controls so it can run its own release
-		// bookkeeping for the joystick / console / fire / menu
-		// buttons.  Ignored if the screen is no longer the gameplay
-		// overlay — the handler is robust to that.  Pass both flags
-		// true so in-flight releases are always processed even if the
-		// user toggled visibility while the finger was down.
-		ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig,
-			true, true);
-		if (ev.type == SDL_EVENT_FINGER_UP)
-			RemoveGameOwnedFinger(ev.tfinger.fingerID);
-		return true;
-	}
+	if (ev.type == SDL_EVENT_WINDOW_FOCUS_LOST
+		|| ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND
+		|| ev.type == SDL_EVENT_DID_ENTER_BACKGROUND)
+		s_gameOwnedFingers.clear();
 
-	// If a menu/dialog is open, let ImGui handle everything (it
-	// receives the synthetic touch mouse stream from the SDL3 backend).
-	if (mobileState.currentScreen != ATMobileUIScreen::None)
-		return false;
-
-	// Route touch events to virtual keyboard first (if visible), then touch controls.
-	// When the virtual keyboard is showing, touch controls are hidden so we
-	// don't forward events to them — the keyboard owns the entire touch surface.
 	if (isFinger) {
+		if (overlayAvailable)
+			mobileState.touchOverlayIdleSeconds = 0.0f;
+
+		const auto owned = std::find(s_gameOwnedFingers.begin(),
+			s_gameOwnedFingers.end(), ev.tfinger.fingerID);
+		if (owned != s_gameOwnedFingers.end()) {
+			if (!fingerDown) {
+				ATTouchControls_HandleEvent(ev, mobileState.layout,
+					mobileState.layoutConfig, true, true);
+				if (fingerRelease)
+					s_gameOwnedFingers.erase(owned);
+				return true;
+			}
+
+			// Android may reuse an ID after delivering a new touch without
+			// the previous release (for example, when the canvas resized).
+			SDL_Event cancel = ev;
+			cancel.type = SDL_EVENT_FINGER_CANCELED;
+			ATTouchControls_HandleEvent(cancel, mobileState.layout,
+				mobileState.layoutConfig, true, true);
+			s_gameOwnedFingers.erase(owned);
+		}
+
+		if (!inGame)
+			return false;
+
 		if (g_uiState.showVirtualKeyboard) {
 			ATUIVirtualKeyboard_HandleEvent(ev, g_sim, true);
-			// Consume all touch events when keyboard is visible to prevent
-			// them from reaching touch controls (which are hidden).
 			return true;
 		}
 
-		if (!mobileState.showTouchControls && !mobileState.showHamburgerMenu)
+		if (!overlayAvailable)
 			return false;
 
-		if (mobileState.showTouchControls && mobileState.topBarEnabled
-			&& !mobileState.topBarVisible && ev.type == SDL_EVENT_FINGER_DOWN)
-		{
-			const float px = ev.tfinger.x * mobileState.layout.screenW;
-			const float py = ev.tfinger.y * mobileState.layout.screenH;
-			ATTouchRect topBarPx = ATTouchLayout_ToPixels(mobileState.layout.topBar,
-				mobileState.layout.screenW, mobileState.layout.screenH);
-			if (topBarPx.Contains(px, py)) {
-				mobileState.topBarVisible = true;
-				mobileState.topBarTimer = 0.0f;
-				ATTouchControls_SetConsoleKeysVisible(true);
-				AddGameOwnedFinger(ev.tfinger.fingerID);
+		const float x = ev.tfinger.x;
+		const float y = ev.tfinger.y;
+		const bool inTopBar = mobileState.layout.topBar.Contains(x, y);
+		const bool inPlayZone = mobileState.showTouchControls && !inTopBar
+			&& ATTouchControls_IsGameplayZone(mobileState.layout, x, y);
+		if (fingerDown && (mobileState.autoHideTouchOverlay ? !inPlayZone : inTopBar)) {
+			const bool wakingTopBar = !mobileState.topBarVisible
+				&& ((mobileState.showTouchControls && mobileState.topBarEnabled)
+					|| (mobileState.autoHideTouchOverlay && mobileState.showHamburgerMenu));
+			mobileState.topBarTimer = 0.0f;
+			mobileState.topBarVisible = true;
+			UpdateTouchConsoleKeys(mobileState);
+			if (wakingTopBar) {
+				// The reveal gesture must finish before a newly visible
+				// Start, Fast Forward or Menu button can fire.
+				s_gameOwnedFingers.push_back(ev.tfinger.fingerID);
 				return true;
 			}
 		}
 
-		bool consumed = ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig,
-			mobileState.showTouchControls, mobileState.showHamburgerMenu);
-		if (consumed && ev.type == SDL_EVENT_FINGER_DOWN) {
-			if (mobileState.topBarEnabled && mobileState.topBarVisible)
-				mobileState.topBarTimer = 0.0f;
-			AddGameOwnedFinger(ev.tfinger.fingerID);
-		}
+		const bool consumed = ATTouchControls_HandleEvent(ev, mobileState.layout,
+			mobileState.layoutConfig, mobileState.showTouchControls,
+			TouchMenuVisible(mobileState));
+		if (consumed && fingerDown)
+			s_gameOwnedFingers.push_back(ev.tfinger.fingerID);
 		return consumed;
 	}
 
-	// Mouse-click fallback for the hamburger icon — desktops without a
-	// touchscreen have no finger events, so route left-button clicks on
-	// the icon through the same handler.  The handler itself filters out
-	// synthetic touch-mouse events (SDL_TOUCH_MOUSEID) so this never
-	// double-fires with the finger path.  Suppressed while a modal info
-	// or confirm sheet is up so those clicks reach ImGui instead.
-	const bool isMouseButton = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-		|| ev.type == SDL_EVENT_MOUSE_BUTTON_UP;
-	if (isMouseButton && mobileState.showHamburgerMenu
-		&& !g_uiState.showVirtualKeyboard
-		&& !s_infoModalOpen && !s_confirmActive
-		&& !ATUIIsEmuErrorDialogOpen())
+	// Desktop mouse fallback for the menu. Ignore SDL's synthetic mouse
+	// events because their finger events have already been routed above.
+	const bool mouseDown = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+	if (overlayAvailable && (mouseDown || ev.type == SDL_EVENT_MOUSE_BUTTON_UP)
+		&& ev.button.which != SDL_TOUCH_MOUSEID
+		&& ev.button.button == SDL_BUTTON_LEFT)
 	{
-		if (ATTouchControls_HandleEvent(ev, mobileState.layout, mobileState.layoutConfig,
-				mobileState.showTouchControls, mobileState.showHamburgerMenu))
-			return true;
+		if (mouseDown && mobileState.autoHideTouchOverlay) {
+			mobileState.touchOverlayIdleSeconds = 0.0f;
+			mobileState.topBarTimer = 0.0f;
+			const bool wakingMenu = mobileState.showHamburgerMenu
+				&& !mobileState.topBarVisible
+				&& mobileState.layout.btnMenu.Contains(ev.button.x, ev.button.y);
+			mobileState.topBarVisible = true;
+			UpdateTouchConsoleKeys(mobileState);
+			if (wakingMenu)
+				return true;
+		}
+
+		return ATTouchControls_HandleEvent(ev, mobileState.layout,
+			mobileState.layoutConfig, mobileState.showTouchControls,
+			TouchMenuVisible(mobileState));
 	}
 
 	return false;

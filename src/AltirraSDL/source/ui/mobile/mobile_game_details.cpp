@@ -28,8 +28,9 @@
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 
-#include <cstdio>
+#include <cmath>
 
 #include <vd2/system/text.h>
 
@@ -133,10 +134,56 @@ void RenderGameDetails(ATSimulator &sim, ATUIState &uiState,
 			return;
 		}
 
-		const float footerH = dp(ATTouch::kFooterReserveDouble);
+		const float btnH = dp(ATTouch::kButtonHeightNormal);
+		const float gap = dp(8.0f);
+		const float spacingY = ImGui::GetStyle().ItemSpacing.y;
+		const float footerW = ImGui::GetContentRegionAvail().x;
+		const float dismissH = dp(ATTouch::kButtonHeightSmall);
+
+		// Reserve only the height of the primary actions and visible
+		// metadata feedback. Leave the remaining space for the synopsis.
+		VDStringA status;
+		const bool canDownload = ATUIMetadataCanDownloadNow(status);
+		const ATMetadataScraper &scraper = ATMetadataGetScraper();
+		const auto &report = ATUIMetadataGetLastRunText();
+		const bool hasReport = !scraper.IsRunning() && !report.empty();
+		uint32 statusColor = pal.textMuted;
+		if (scraper.IsRunning()) {
+			const VDStringA current = scraper.GetCurrentName();
+			status.sprintf("Looking up %s\xE2\x80\xA6",
+				current.empty() ? "this game" : current.c_str());
+			statusColor = pal.textSection;
+		} else if (hasReport) {
+			status = report;
+			const int kind = ATUIMetadataGetLastRunKind();
+			statusColor = kind == 2 ? pal.warning : kind == 3 ? pal.danger : pal.success;
+		}
+
+		float footerH = btnH + spacingY;
+		if (!status.empty())
+			footerH += ImGui::CalcTextSize(status.c_str(), nullptr, false, footerW).y + spacingY;
+		if (hasReport)
+			footerH += dismissH + spacingY;
+		if (s_focusPlay)
+			ImGui::SetNextWindowScroll(ImVec2(0, 0));
 		ImGui::BeginChild("##detailsBody", ImVec2(0, -footerH),
 			ImGuiChildFlags_NavFlattened);
 		ATTouchDragScroll();
+
+		// Keep right-stick scrolling available while Play or another
+		// footer action has focus. ImGui scrolls the focused child itself.
+		if (GImGui->NavWindow == ImGui::GetCurrentWindow()->RootWindow
+			&& ImGui::GetScrollMaxY() > 0.0f)
+		{
+			// The backend maps the physical right stick to ImGui's
+			// proportional scroll inputs in Gaming Mode.
+			const float dy = ImGui::GetKeyData(ImGuiKey_GamepadLStickDown)->AnalogValue
+				- ImGui::GetKeyData(ImGuiKey_GamepadLStickUp)->AnalogValue;
+			if (dy != 0.0f) {
+				const float speed = std::round(ImGui::GetFontSize() * 100.0f * io.DeltaTime);
+				ImGui::SetScrollY(std::trunc(ImGui::GetScrollY() + dy * speed));
+			}
+		}
 
 		const float availW = ImGui::GetContentRegionAvail().x;
 
@@ -233,6 +280,84 @@ void RenderGameDetails(ATSimulator &sim, ATUIState &uiState,
 			}
 		}
 
+		ImGui::Spacing();
+		const float actionW = (availW - gap) * 0.5f;
+		const bool hasVariants = entry.mVariants.size() > 1;
+		if (hasVariants) {
+			if (ATTouchButton("Choose variant", ImVec2(actionW, btnH),
+				ATTouchButtonStyle::Neutral, ICON_MD_LAYERS))
+			{
+				const int entryIdx = s_detailsEntry;
+				GameDetails_Close();
+				mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
+				GameBrowser_ShowVariantPickerForBoot(entryIdx);
+				ATTouchEndDragScroll();
+				ImGui::EndChild();
+				ImGui::End();
+				return;
+			}
+		}
+
+		// Remove from library.  Behind a confirmation, because "Remove"
+		// beside a game name reads as "delete the file" to plenty of
+		// people and being wrong about that is unrecoverable — the
+		// confirmation says plainly that the file is left alone.
+		if (hasVariants)
+			ImGui::SameLine(0, gap);
+		if (ATTouchButton("Remove from library", ImVec2(actionW, btnH),
+			ATTouchButtonStyle::Neutral, ICON_MD_DELETE))
+		{
+			const int entryIdx = s_detailsEntry;
+			VDStringA body;
+			body.sprintf("Remove \"%s\" from your library?\n\n"
+				"The file stays on your device. Only the library entry "
+				"goes.", displayName.c_str());
+			// Be straight about how long "removed" lasts for this game:
+			// one that lives in a scanned folder is still in that folder.
+			if (lib.WillRescanRestore((size_t)entryIdx)) {
+				body += "\n\nIt sits inside a folder you scan, so a later "
+					"rescan will find it again. Remove that folder under "
+					"Settings > Game Library to keep it out for good.";
+			}
+			ShowConfirmDialog("Remove from library", body.c_str(),
+				[entryIdx]() {
+					ATGameLibrary *l = GetGameLibrary();
+					if (!l)
+						return;
+					l->RemoveEntry((size_t)entryIdx);
+					GameBrowser_Invalidate();
+					// The sheet was showing that entry; there is nothing
+					// left to show, so fall back to the browser.
+					GameDetails_Close();
+					g_mobileState.currentScreen =
+						ATMobileUIScreen::GameBrowser;
+					ATTouchPushToast("Removed from library",
+						ATTouchToastSeverity::Success);
+				});
+		}
+
+		// "Use current screen as art" acts on the RUNNING game, not on
+		// whichever entry the sheet happens to be showing.  Offering it
+		// while looking at a different game would silently retitle the
+		// wrong entry, so it only appears when the two coincide.
+		if (GameBrowser_FindCurrentEntry() == s_detailsEntry) {
+			if (!hasVariants)
+				ImGui::SameLine(0, gap);
+			if (ATTouchButton("Use current screen as art",
+				ImVec2(actionW, btnH), ATTouchButtonStyle::Neutral,
+				ICON_MD_IMAGE))
+			{
+				const VDStringA error = GameBrowser_SetCurrentFrameAsArt();
+				if (!error.empty()) {
+					ATMobileUI_ShowInfoModal("Could not set art",
+						error.c_str());
+				} else {
+					ATTouchPushToast("Art updated",
+						ATTouchToastSeverity::Success);
+				}
+			}
+		}
+
 		ImGui::Dummy(ImVec2(0, dp(16.0f)));
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
@@ -240,9 +365,7 @@ void RenderGameDetails(ATSimulator &sim, ATUIState &uiState,
 		// --- Footer actions ------------------------------------------
 		// Outside the child, but the child is NavFlattened, so D-pad
 		// still walks in and out of it without an extra press.
-		const float btnH = dp(ATTouch::kButtonHeightNormal);
-		const float gap = dp(8.0f);
-		const float halfW = (ImGui::GetContentRegionAvail().x - gap) * 0.5f;
+		const float halfW = (footerW - gap) * 0.5f;
 
 		// Initial focus goes on Play: with a controller in hand the
 		// user has already chosen the game, so one A press should start
@@ -275,8 +398,6 @@ void RenderGameDetails(ATSimulator &sim, ATUIState &uiState,
 
 		ImGui::SameLine(0, gap);
 
-		VDStringA whyNot;
-		const bool canDownload = ATUIMetadataCanDownloadNow(whyNot);
 		ImGui::BeginDisabled(!canDownload);
 		if (ATTouchButton(meta.mStatus == GameMetaStatus::None
 			? "Get metadata" : "Update metadata",
@@ -287,135 +408,14 @@ void RenderGameDetails(ATSimulator &sim, ATUIState &uiState,
 		}
 		ImGui::EndDisabled();
 
-		// A disabled button with no explanation is a dead end on touch,
-		// where there is no hover tooltip — say why inline instead.
-		if (!canDownload && !whyNot.empty())
-			ATTouchMutedText(whyNot.c_str());
-
-		// Live progress, then the outcome, both inline.
-		//
-		// A toast alone is not enough here: this is the screen the user
-		// is staring at when they press the button, and a message that
-		// fades after a few seconds is a message they can miss.  Without
-		// either, pressing "Get metadata" looks like it did nothing,
-		// which is exactly what makes people press it again.
-		{
-			ATMetadataScraper& scraper = ATMetadataGetScraper();
-			if (scraper.IsRunning()) {
-				const VDStringA current = scraper.GetCurrentName();
-				char busy[160];
-				snprintf(busy, sizeof busy, "Looking up %s\xE2\x80\xA6",
-					current.empty() ? "this game" : current.c_str());
-				ImGui::PushStyleColor(ImGuiCol_Text,
-					ATMobileCol(pal.textSection));
-				ImGui::PushTextWrapPos(0.0f);
-				ImGui::TextUnformatted(busy);
-				ImGui::PopTextWrapPos();
-				ImGui::PopStyleColor();
-			} else {
-				const VDStringA& report = ATUIMetadataGetLastRunText();
-				if (!report.empty()) {
-					const int kind = ATUIMetadataGetLastRunKind();
-					uint32 col = pal.success;
-					if (kind == 2) col = pal.warning;
-					if (kind == 3) col = pal.danger;
-					ImGui::PushStyleColor(ImGuiCol_Text, ATMobileCol(col));
-					ImGui::PushTextWrapPos(0.0f);
-					ImGui::TextUnformatted(report.c_str());
-					ImGui::PopTextWrapPos();
-					ImGui::PopStyleColor();
-					if (ATTouchButton("Dismiss##runreport",
-						ImVec2(0, dp(ATTouch::kButtonHeightSmall)),
-						ATTouchButtonStyle::Subtle))
-					{
-						ATUIMetadataClearLastRun();
-					}
-				}
-			}
-		}
-
-		// Row 2 is optional on both halves, so the separator between them
-		// is emitted by whichever button comes second — a SameLine with
-		// nothing after it leaves the next section hanging on the wrong
-		// line.
-		bool pendingSameLine = false;
-
-		if (entry.mVariants.size() > 1) {
-			if (ATTouchButton("Choose variant", ImVec2(halfW, btnH),
-				ATTouchButtonStyle::Neutral, ICON_MD_LAYERS))
+		if (!status.empty()) {
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextColored(ATMobileCol(statusColor), "%s", status.c_str());
+			ImGui::PopTextWrapPos();
+			if (hasReport && ATTouchButton("Dismiss##runreport",
+				ImVec2(0, dismissH), ATTouchButtonStyle::Subtle))
 			{
-				const int entryIdx = s_detailsEntry;
-				GameDetails_Close();
-				mobileState.currentScreen = ATMobileUIScreen::GameBrowser;
-				GameBrowser_ShowVariantPickerForBoot(entryIdx);
-				ImGui::End();
-				return;
-			}
-			pendingSameLine = true;
-		}
-
-		// Remove from library.  Behind a confirmation, because "Remove"
-		// beside a game name reads as "delete the file" to plenty of
-		// people and being wrong about that is unrecoverable — the
-		// confirmation says plainly that the file is left alone.
-		if (pendingSameLine) {
-			ImGui::SameLine(0, gap);
-			pendingSameLine = false;
-		}
-		if (ATTouchButton("Remove from library", ImVec2(halfW, btnH),
-			ATTouchButtonStyle::Neutral, ICON_MD_DELETE))
-		{
-			const int entryIdx = s_detailsEntry;
-			VDStringA body;
-			body.sprintf("Remove \"%s\" from your library?\n\n"
-				"The file stays on your device. Only the library entry "
-				"goes.", displayName.c_str());
-			// Be straight about how long "removed" lasts for this game:
-			// one that lives in a scanned folder is still in that folder.
-			if (lib.WillRescanRestore((size_t)entryIdx)) {
-				body += "\n\nIt sits inside a folder you scan, so a later "
-					"rescan will find it again. Remove that folder under "
-					"Settings > Game Library to keep it out for good.";
-			}
-			ShowConfirmDialog("Remove from library", body.c_str(),
-				[entryIdx]() {
-					ATGameLibrary *l = GetGameLibrary();
-					if (!l)
-						return;
-					l->RemoveEntry((size_t)entryIdx);
-					GameBrowser_Invalidate();
-					// The sheet was showing that entry; there is nothing
-					// left to show, so fall back to the browser.
-					GameDetails_Close();
-					g_mobileState.currentScreen =
-						ATMobileUIScreen::GameBrowser;
-					ATTouchPushToast("Removed from library",
-						ATTouchToastSeverity::Success);
-				});
-		}
-		pendingSameLine = true;
-
-		// "Use current screen as art" acts on the RUNNING game, not on
-		// whichever entry the sheet happens to be showing.  Offering it
-		// while looking at a different game would silently retitle the
-		// wrong entry, so it only appears when the two coincide.
-		if (GameBrowser_FindCurrentEntry() == s_detailsEntry) {
-			if (pendingSameLine) {
-				ImGui::SameLine(0, gap);
-				pendingSameLine = false;
-			}
-			if (ATTouchButton("Use current screen as art",
-				ImVec2(halfW, btnH), ATTouchButtonStyle::Neutral,
-				ICON_MD_IMAGE))
-			{
-				const VDStringA error = GameBrowser_SetCurrentFrameAsArt();
-				if (!error.empty()) {
-					ATMobileUI_ShowInfoModal("Could not set art",
-						error.c_str());
-				} else {
-					ATTouchPushToast("Art updated",
-						ATTouchToastSeverity::Success);
-				}
+				ATUIMetadataClearLastRun();
 			}
 		}
 	}

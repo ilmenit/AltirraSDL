@@ -290,11 +290,7 @@ enum class ATGamePreviewDock {
 	Bottom,
 };
 
-// `enabled` is the user's GameLibrarySettings.mbShowDetailsPanel.
-ATGamePreviewDock GamePreview_ComputeDock(float bodyW, float bodyH,
-	bool enabled);
-float GamePreview_SideWidth(float bodyW);
-float GamePreview_BottomHeight(float bodyH);
+ATGamePreviewDock GamePreview_ComputeDock(float width, float height);
 
 // Draw the panel into a child window of exactly `size`.  Draws nothing
 // (but still consumes the space) when `entryIndex` is out of range.

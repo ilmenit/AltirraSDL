@@ -769,6 +769,13 @@ void RenderSettings(ATSimulator &sim, ATUIState &uiState,
 			SaveMobileConfig(mobileState);
 		}
 
+		if (ATTouchToggle("Hide On-Screen Controls When Idle",
+				&mobileState.autoHideTouchOverlay))
+			SaveMobileConfig(mobileState);
+		if (mobileState.autoHideTouchOverlay)
+			ATTouchMutedText("Touch the game to show the controls. "
+				"Tap above the controls to show the menu and console buttons.");
+
 #ifdef ALTIRRA_NETPLAY_ENABLED
 		// Online Play emoticons — when on, the user can send icons
 		// during a netplay session via F1 / R3 / on-screen button.
