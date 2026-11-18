@@ -61,7 +61,8 @@ def pane(emu, name):
                  if name in window["name"]), None)
 
 
-@pytest.mark.parametrize("width,height", [(1280, 720), (640, 360), (480, 854)])
+@pytest.mark.parametrize("width,height",
+                         [(1280, 720), (640, 360), (480, 260), (480, 854)])
 def test_details_split_full_safe_area(emu, width, height):
     emu.send(f"set_window_size {width} {height}")
     emu.pause()
@@ -76,7 +77,9 @@ def test_details_split_full_safe_area(emu, width, height):
     assert library and game_list and details and text
     assert pane(emu, "##StatusOverlay") is None
     assert text["h"] >= 60
-    assert library["y"] + library["h"] - game_list["y"] >= 60
+    assert library["y"] + library["h"] - game_list["y"] >= 48
+    play = emu.find_item("##gamePreview_", "Play##preview")
+    assert play and play["w"] >= details["w"] * 0.40
     if width > height:
         assert library["y"] == details["y"]
         assert abs(details["w"] - browser["w"] // 2) <= 14

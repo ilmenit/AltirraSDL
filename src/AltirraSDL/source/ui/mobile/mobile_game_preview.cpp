@@ -363,9 +363,6 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
-		DrawActions(sim, mobileState, entryIndex, entry,
-			ImGui::GetContentRegionAvail().x);
-
 	} else {
 		// ── Horizontal layout ────────────────────────────────────
 		// Use the pane's width for art and text when height is limited.
@@ -380,7 +377,7 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 		const bool compact = (availW < dp(kCompactBodyW))
 			|| (availH < dp(kCompactBodyH));
 
-		const float artH = availH;
+		const float artH = availH - footerH;
 		// Slightly wider than tall suits the mix of portrait covers and
 		// landscape screenshots — but never at the text column's expense,
 		// so the aspect-derived width is capped against the panel width.
@@ -406,20 +403,20 @@ void GamePreview_Render(ATSimulator &sim, ATMobileUIState &mobileState,
 
 		ImGui::SameLine(0, dp(compact ? 10.0f : 14.0f));
 
-		ImGui::BeginGroup();
 		const float textW = ImGui::GetContentRegionAvail().x;
 		if (entryChanged)
 			ImGui::SetNextWindowScroll(ImVec2(0, 0));
-		ImGui::BeginChild("##previewText", ImVec2(textW, -footerH),
+		ImGui::BeginChild("##previewText", ImVec2(textW, artH),
 			ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
 		ATTouchDragScroll();
 		DrawText(entry, pal, /*includeSynopsis=*/true, compact);
 		ATTouchEndDragScroll();
 		ImGui::EndChild();
 
-		DrawActions(sim, mobileState, entryIndex, entry, textW);
-		ImGui::EndGroup();
 	}
+
+	DrawActions(sim, mobileState, entryIndex, entry,
+		ImGui::GetContentRegionAvail().x);
 
 	ImGui::EndChild();
 	ImGui::PopStyleVar(2);
