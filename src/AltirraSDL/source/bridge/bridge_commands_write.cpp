@@ -1222,6 +1222,7 @@ std::string BuildConfigPayload(ATSimulator& sim) {
 		case 5: payload += "\"512K\""; break;
 		case 6: payload += "\"1024K\""; break;
 		case 7: payload += "\"2048K\""; break;
+		case 8: payload += "\"4096K\""; break;
 		default: payload += "\"unknown\""; break;
 	}
 	payload += ',';
@@ -2400,6 +2401,7 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 				case 5: payload += "\"512K\""; break;
 				case 6: payload += "\"1024K\""; break;
 				case 7: payload += "\"2048K\""; break;
+				case 8: payload += "\"4096K\""; break;
 				default: payload += "\"unknown\""; break;
 			}
 			return JsonOk(payload);
@@ -2612,7 +2614,8 @@ std::string CmdConfig(ATSimulator& sim, const std::vector<std::string>& tokens) 
 		else if (val == "256k") bits = 4;
 		else if (val == "512k") bits = 5;
 		else if (val == "1024k") bits = 6;
-		else if (val == "2048k" || val == "4096k") bits = 7;
+		else if (val == "2048k") bits = 7;
+		else if (val == "4096k") bits = 8;
 		else return JsonError("CONFIG: unknown axlonmemsize '" + rawVal + "'");
 		sim.SetAxlonMemoryMode(bits);
 		ColdResetPreservingPause(sim);

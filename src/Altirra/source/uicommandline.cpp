@@ -491,7 +491,7 @@ void ATUICommandLineProcessor::Run() {
 			if (!vdwcsicmp(arg, L"2048K"))
 				g_sim.SetAxlonMemoryMode(7);
 			if (!vdwcsicmp(arg, L"4096K"))
-				g_sim.SetAxlonMemoryMode(7);
+				g_sim.SetAxlonMemoryMode(8);
 		}
 
 		if (mCmdLine.FindAndRemoveSwitch(L"highbanks", arg)) {
